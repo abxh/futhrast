@@ -1,0 +1,5 @@
+package github.com/abxh/futhrast
+
+require {
+  github.com/diku-dk/lys 0.1.26 #5a411c1ddd0d0c6cdc82ecd86c263c535832bfd9
+}
