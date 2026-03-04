@@ -3,18 +3,33 @@
 PROGNAME := futhrast-gui
 BUILD_DIR := build
 
-all: run
+export PROGNAME
 
-run: prepare
-	$(MAKE) -C $(BUILD_DIR) PROGNAME=$(PROGNAME) \
-		-f ../lib/github.com/diku-dk/lys/common.mk
+CFLAGS ?= -std=gnu11 -O -Wall -Wextra -pedantic
+CXXFLAGS ?= -std=c++17 -O -Wall -Wextra -pedantic
+
+# enable ubsan sanitizer. may comment below chunk out.
+CFLAGS += -fsanitize=undefined
+CXXFLAGS += -fsanitize=undefined
+LDFLAGS += -fsanitize=undefined
+
+export CFLAGS CXXFLAGS LDFLAGS
+
+ll: run
+
+run: build/
+	$(MAKE) \
+		-C $(BUILD_DIR) \
+		-f ../lib/github.com/abxh/lys/common.mk
 
 clean:
-	rm -rf $(BUILD_DIR)
+	$(MAKE) clean \
+		-C $(BUILD_DIR) \
+		-f ../lib/github.com/abxh/lys/common.mk
 
-prepare:
+build/:
 	@mkdir -p $(BUILD_DIR)
-	@for f in *.fut; do \
-		ln -sf ../$$f $(BUILD_DIR)/$$f; \
+	@for f in *.fut *.bin *.obj; do \
+		ln -sf "../$$f" "$(BUILD_DIR)/$$f"; \
 	done
 	@ln -snf ../lib $(BUILD_DIR)/lib
