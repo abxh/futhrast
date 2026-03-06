@@ -15,6 +15,10 @@ LDFLAGS += -fsanitize=undefined
 
 export CFLAGS CXXFLAGS LDFLAGS
 
+LYS_BACKEND := c
+
+export LYS_BACKEND
+
 ll: run
 
 run: build/

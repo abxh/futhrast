@@ -193,8 +193,8 @@ module mk_rasterizer (Config: ConfigSpec) (Varying: VaryingSpec) (Target: Target
 
   def rasterize_tile [n]
                      (plot: plot_t)
-                     (tri_infos: [n]triangle_info_t)
-                     (tile: tile_t) : tile_t =
+                     (tile: tile_t)
+                     (tri_infos: [n]triangle_info_t) : tile_t =
     let tile_w_mins =
       tri_infos
       |> map (\tri_info ->
@@ -248,23 +248,30 @@ module mk_rasterizer (Config: ConfigSpec) (Varying: VaryingSpec) (Target: Target
          || ((fixedpoint.<) tri_info.bbox.ymax tile_ymin)
          || ((fixedpoint.>) tri_info.bbox.ymin tile_ymax))
 
-  def rasterize_fp (plot: plot_t)
+  def rasterize_fp [n]
+                   (plot: plot_t)
                    (tris: []triangle_fp_t)
-                   (framebuffer: Framebuffer.t) : Framebuffer.t =
-    let tris' = tris |> map calc_triangle_info
+                   (tri_indices: []i64)
+                   (tile_offsets: [n]i64)
+                   (tile_count: [n]i64)
+                   (fb: Framebuffer.t) : Framebuffer.t =
+    let tiles_flattend = fb.tiles |> flatten
     let tiles' =
-      framebuffer.tiles
-      |> map (map (\tile -> rasterize_tile plot tris' tile))
-    in framebuffer with tiles = tiles'
+      zip tiles_flattend (indices tiles_flattend)
+      |> map (\(tile, tile_id) ->
+                let indices = iota tile_count[tile_id] |> map (+ tile_offsets[tile_id])
+                let tris_batch = map (\i -> tris[tri_indices[i]]) indices
+                let tris_info = map calc_triangle_info tris_batch
+                in rasterize_tile plot tile tris_info)
+      |> unflatten
+    in fb with tiles = tiles'
 
-  def rasterize (plot: plot_t)
-                (tris: []triangle Varying.t)
-                (framebuffer: framebuffer_t) : framebuffer_t =
-    rasterize_fp plot (map conv_to_triangle_fp tris) framebuffer
+  def rasterize_w_no_mask (plot: plot_t)
+                          (tris: []triangle Varying.t)
+                          (fb: framebuffer_t) : framebuffer_t =
+    -- todo: tri_indices to use a `expand` function
+    let tile_count = replicate (fb.tiles_w * fb.tiles_h) (length tris)
+    let tile_offsets = scan (+) 0 (map (\i -> if i == 0 then 0 else tile_count[i - 1]) (iota (fb.tiles_w * fb.tiles_h)))
+    let tri_indices = replicate (fb.tiles_w * fb.tiles_h) (iota (length tris)) |> flatten
+    in rasterize_fp plot (map conv_to_triangle_fp tris) tri_indices tile_offsets tile_count fb
 }
-
--- type~ tile_bins =
---   { ids: []i64
---   , offsets: []i64
---   , count: []i64
---   }
