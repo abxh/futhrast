@@ -25,18 +25,17 @@ module tri_functions = {
   type triangle_fp_pos = (vec2fp.t, vec2fp.t, vec2fp.t)
 
   def conv_to_triangle_fp 'varying ((v0, v1, v2): triangle varying) : triangle_fp varying =
-    let f = \{x, y} -> {x = fixedpoint.f32 x, y = fixedpoint.f32 y}
-    let f' = \v -> {pos = f v.pos, depth = v.depth, Z_inv = v.Z_inv, attr = v.attr}
-    in (f' v0, f' v1, f' v2)
+    let f = \v -> {pos = (vec2f.map) fixedpoint.f32 v.pos, depth = v.depth, Z_inv = v.Z_inv, attr = v.attr}
+    in (f v0, f v1, f v2)
 
   def conv_to_triangle_float 'varying ((v0, v1, v2): triangle_fp varying) : triangle varying =
-    let f = \{x, y} -> {x = fixedpoint.to_f32 x, y = fixedpoint.to_f32 y}
-    let f' = \v -> {pos = f v.pos, depth = v.depth, Z_inv = v.Z_inv, attr = v.attr}
-    in (f' v0, f' v1, f' v2)
+    let f = \v -> {pos = (vec2fp.map) fixedpoint.to_f32 v.pos, depth = v.depth, Z_inv = v.Z_inv, attr = v.attr}
+    in (f v0, f v1, f v2)
 
   def get_triangle_fp_pos 'varying (t: triangle_fp varying) : triangle_fp_pos = (t.0.pos, t.1.pos, t.2.pos)
 
   def calc_tri_area_2 ((v0, v1, v2): (vec2fp.t, vec2fp.t, vec2fp.t)) : fixedpoint.t =
+    -- assuming counterclockwise orientation
     let v0v1 = (vec2fp.-) v1 v0
     let v0v2 = (vec2fp.-) v2 v0
     in (vec2fp.cross) v0v1 v0v2
@@ -48,9 +47,6 @@ module wcoeffs_vec2fp = {
   local open tri_functions
 
   local def center_offset = {x = fixedpoint.f32 0.5, y = fixedpoint.f32 0.5}
-
-  -- | handy function to convert i64 to vector type
-  def vec2fp_from_i64_tup2 (x: i64, y: i64) = {x = fixedpoint.i64 x, y = fixedpoint.i64 y}
 
   -- | shift point so it lies in the center of a fragment for visibility tests
   def add_center_offset ((v0, v1, v2): triangle_fp_pos) : triangle_fp_pos =
@@ -108,9 +104,6 @@ module wcoeffs_vec3fp = {
   def w_at (w_min: vec3fp.t) ((delta_wx, delta_wy): (vec3fp.t, vec3fp.t)) (b: vec2fp.t) : vec3fp.t =
     -- usage of delta terms:
     w_min + b.x * delta_wx + b.y * delta_wy
-
-  def conv_vec3fp_to_vec3f (v: vec3fp.t) : vec3f.t =
-    {x = fixedpoint.to_f32 v.x, y = fixedpoint.to_f32 v.y, z = fixedpoint.to_f32 v.z}
 }
 
 local
@@ -189,10 +182,10 @@ module mk_rasterizer (Config: ConfigSpec) (Varying: VaryingSpec) (Target: Target
     zip2 tri_infos tile_w_mins
     |> map (\(tri_info, tile_w_min) ->
               let w =
-                w_at tile_w_min tri_info.w_delta <| vec2fp_from_i64_tup2 (bx, by)
+                w_at tile_w_min tri_info.w_delta <| (vec2fp.from_tuple) (fixedpoint.i64 bx, fixedpoint.i64 by)
                 |> (vec3fp.+) tri_info.w_bias
               in if is_inside_triangle w
-                 then let weights = (vec3f./) (conv_vec3fp_to_vec3f w) tri_info.area_2 |> vec3f.to_tuple
+                 then let weights = (vec3f./) ((vec3fp.map) fixedpoint.to_f32 w) tri_info.area_2 |> vec3f.to_tuple
                       let vs = tri_info.tri |> conv_to_triangle_float
                       let pf = (Fragment.barycentric) vs weights
                       in (plot pf, pf.depth)
@@ -205,7 +198,7 @@ module mk_rasterizer (Config: ConfigSpec) (Varying: VaryingSpec) (Target: Target
     let tile_w_mins =
       tri_infos
       |> map (\tri_info ->
-                vec2fp_from_i64_tup2 (tile.bbox.xmin, tile.bbox.ymin)
+                (vec2fp.from_tuple) (fixedpoint.i64 tile.bbox.xmin, fixedpoint.i64 tile.bbox.ymin)
                 |> calc_wcoeffs (get_triangle_fp_pos tri_info.tri))
     let buffer =
       (flatten tile.target, flatten tile.depth) |> uncurry zip |> unflatten
@@ -246,27 +239,14 @@ module mk_rasterizer (Config: ConfigSpec) (Varying: VaryingSpec) (Target: Target
        }
 
   def calc_triangle_tile_mask (tile_bbox: bbox2D i64) (tri_info: triangle_info_t) : bool =
-    -- attempt at minor optimisation
     let tile_xmin = fixedpoint.i64 tile_bbox.xmin
     let tile_xmax = fixedpoint.i64 tile_bbox.xmax
     let tile_ymin = fixedpoint.i64 tile_bbox.ymin
     let tile_ymax = fixedpoint.i64 tile_bbox.ymax
-    in (((fixedpoint.<) tri_info.bbox.xmax tile_xmin)
-        || ((fixedpoint.>) tri_info.bbox.xmin tile_xmax)
-        || ((fixedpoint.<) tri_info.bbox.ymax tile_ymin)
-        || ((fixedpoint.>) tri_info.bbox.ymin tile_ymax))
-       && (let w_min = (tile_bbox.xmin, tile_bbox.ymin) |> vec2fp_from_i64_tup2 |> calc_wcoeffs (get_triangle_fp_pos tri_info.tri)
-           let x = tile_bbox.xmax - tile_bbox.xmin
-           let y = tile_bbox.ymax - tile_bbox.ymin
-           let w0 = w_at w_min tri_info.w_delta <| vec2fp_from_i64_tup2 (0, 0)
-           let w1 = w_at w_min tri_info.w_delta <| vec2fp_from_i64_tup2 (x, 0)
-           let w2 = w_at w_min tri_info.w_delta <| vec2fp_from_i64_tup2 (0, y)
-           let w3 = w_at w_min tri_info.w_delta <| vec2fp_from_i64_tup2 (x, y)
-           let outside0 = is_outside_triangle <| (vec3fp.+) w0 tri_info.w_bias
-           let outside1 = is_outside_triangle <| (vec3fp.+) w1 tri_info.w_bias
-           let outside2 = is_outside_triangle <| (vec3fp.+) w2 tri_info.w_bias
-           let outside3 = is_outside_triangle <| (vec3fp.+) w3 tri_info.w_bias
-           in outside0 && outside1 && outside2 && outside3)
+    in !(((fixedpoint.<) tri_info.bbox.xmax tile_xmin)
+         || ((fixedpoint.>) tri_info.bbox.xmin tile_xmax)
+         || ((fixedpoint.<) tri_info.bbox.ymax tile_ymin)
+         || ((fixedpoint.>) tri_info.bbox.ymin tile_ymax))
 
   def rasterize_fp (plot: plot_t)
                    (tris: []triangle_fp_t)
@@ -286,4 +266,5 @@ module mk_rasterizer (Config: ConfigSpec) (Varying: VaryingSpec) (Target: Target
 -- type~ tile_bins =
 --   { ids: []i64
 --   , offsets: []i64
+--   , count: []i64
 --   }
