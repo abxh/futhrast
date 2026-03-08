@@ -11,8 +11,9 @@ cd build
 ./futhrast-gui
 ```
 
-The code was tested with version `0.25.35-1` of the `futhark` compiler.
+The code was tested with [this](https://github.com/diku-dk/futhark/tree/11ed647c187efe43ccc9e808dbcbb040de99d2ba)
+ `nightly` version of the `futhark` compiler. You must build `futhark` manually.
 
 You may need to install `xxd`, `libsdl2-dev` and `libsdl2-ttf-dev` libraries to build the `lys` futhark library.
 
-More details on the requirements of the `lys` library can be found [here](https://github.com/diku-dk/lys?tab=readme-ov-file#requirements).
+More details on the requirements of the `lys` library can be found [here](https://github.com/abxh/lys?tab=readme-ov-file#requirements).

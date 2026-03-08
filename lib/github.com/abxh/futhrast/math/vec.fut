@@ -52,9 +52,6 @@ module type VSpaceSpec = {
   -- | perform a right fold over vector elements
   val foldr 'a : (value_t -> a -> a) -> a -> t -> a
 
-  -- | vector from a increasing index passed to function, starting from 0.
-  val iota : (i64 -> value_t) -> t
-
   -- | vector from replicated value
   val replicate : value_t -> t
 
@@ -297,9 +294,6 @@ module mk_vspace2 (scalar: ScalarSpec) : VSpaceSpec2 with value_t = scalar.t = {
   def foldr 'a (f: value_t -> a -> a) (acc: a) (v: t) : a =
     f v.x (f v.y acc)
 
-  def iota (f: i64 -> value_t) : t =
-    {x = f 0, y = f 1}
-
   def replicate (e: value_t) : t =
     {x = e, y = e}
 
@@ -357,9 +351,6 @@ module mk_vspace3 (scalar: ScalarSpec) : VSpaceSpec3 with value_t = scalar.t = {
 
   def foldr 'a (f: value_t -> a -> a) (acc: a) (v: t) : a =
     f v.x (f v.y (f v.z acc))
-
-  def iota (f: i64 -> value_t) : t =
-    {x = f 0, y = f 1, z = f 2}
 
   def replicate (e: value_t) : t =
     {x = e, y = e, z = e}
@@ -422,9 +413,6 @@ module mk_vspace4 (scalar: ScalarSpec) : VSpaceSpec4 with value_t = scalar.t = {
 
   def foldr 'a (f: value_t -> a -> a) (acc: a) (v: t) : a =
     f v.x (f v.y (f v.z (f v.w acc)))
-
-  def iota (f: i64 -> value_t) : t =
-    {x = f 0, y = f 1, z = f 2, w = f 3}
 
   def replicate (e: value_t) : t =
     {x = e, y = e, z = e, w = e}

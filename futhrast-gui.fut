@@ -27,27 +27,22 @@ module lys : lys with text_content = lys_text_content.text_content = {
 
   type state = lys_state
 
-  module Varying = {
-       type t = argb.colour
-       def (+) = argb.add_linear
-       def (*) = flip argb.scale
-       def (-) x y = x + (-1 * y)
-       def (/) x s = (1 / s) * x
-     }:
-     VaryingSpec with t = argb.colour
+  module Varying : VaryingSpec with t = argb.colour = {
+    type t = argb.colour
+    def zero = argb.black
+    def (+) = argb.add_linear
+    def (*) = flip argb.scale
+    def (-) x y = x + (-1 * y)
+    def (/) x s = (1 / s) * x
+  }
 
   module Config = {
-    def tile_size : i64 = 16
+    def tile_size : i64 = 8
     def triangle_winding_order : #clockwise | #counterclockwise | #neither = #neither
   }
 
-  module Target = {
-    type t = argb.colour
-    def default = argb.black
-  }
-
-  module Framebuffer = mk_framebuffer Config Target
-  module Rasterizer = mk_rasterizer Config Varying Target
+  module Framebuffer = mk_framebuffer Config {type t = argb.colour}
+  module Rasterizer = mk_rasterizer Config Varying {type t = argb.colour} 
 
   def grab_mouse = false
 
@@ -114,8 +109,8 @@ module lys : lys with text_content = lys_text_content.text_content = {
         )
       ]
       |> map (\(v0, v1, v2) -> (f v0, f v1, f v2))
-    in Framebuffer.init {w = s.w, h = s.h}
-       |> Rasterizer.rasterize_w_no_mask (\v -> v.attr) ts
+    in Framebuffer.init {w = s.w, h = s.h} argb.black
+       |> Rasterizer.rasterize (\v -> v.attr) ts
        |> Framebuffer.get_target
 }
 

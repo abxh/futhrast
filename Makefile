@@ -9,13 +9,13 @@ CFLAGS ?= -std=gnu11 -O -Wall -Wextra -pedantic
 CXXFLAGS ?= -std=c++17 -O -Wall -Wextra -pedantic
 
 # enable ubsan sanitizer. may comment below chunk out.
-CFLAGS += -fsanitize=undefined
-CXXFLAGS += -fsanitize=undefined
-LDFLAGS += -fsanitize=undefined
+# CFLAGS += -fsanitize=undefined
+# CXXFLAGS += -fsanitize=undefined
+# LDFLAGS += -fsanitize=undefined
 
 export CFLAGS CXXFLAGS LDFLAGS
 
-LYS_BACKEND := c
+LYS_BACKEND := opencl
 
 export LYS_BACKEND
 

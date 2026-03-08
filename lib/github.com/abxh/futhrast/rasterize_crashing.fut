@@ -163,6 +163,7 @@ module mk_rasterizer (Config: ConfigSpec) (Varying: VaryingSpec) (Target: {type 
     { tri: triangle_fp_t
     , bbox: bbox2D i64
     , inv_area_2: f32
+    , w_min: vec3fp.t
     , w_delta: (vec3fp.t, vec3fp.t)
     , w_bias: vec3fp.t
     }
@@ -173,17 +174,15 @@ module mk_rasterizer (Config: ConfigSpec) (Varying: VaryingSpec) (Target: {type 
                      (plot: plot_t)
                      (tile: tile_t)
                      (tri_infos: [n]triangle_info_t) : tile_t =
-    let compute_tri_w_min_f (tri_info: triangle_info_t) =
-      calc_wcoeffs (get_triangle_fp_pos tri_info.tri)
-      <| (vec2fp.from_tuple) (fixedpoint.i64 tile.bbox.xmin, fixedpoint.i64 tile.bbox.ymin)
-    let tile_w_mins = map compute_tri_w_min_f tri_infos
     let pixel_f (by: i64) (bx: i64) =
       loop (best_target, best_depth) = (tile.target[by][bx], tile.depth[by][bx])
       for i < n do
         let w =
-          (vec2fp.from_tuple) (fixedpoint.i64 bx, fixedpoint.i64 by)
+          (vec2fp.from_tuple) ( fixedpoint.i64 (bx + tile.bbox.xmin)
+                              , fixedpoint.i64 (by + tile.bbox.ymin)
+                              )
           |> (vec2fp.+) {x = fixedpoint.f32 0.5, y = fixedpoint.f32 0.5}
-          |> w_at tile_w_mins[i] tri_infos[i].w_delta
+          |> w_at tri_infos[i].w_min tri_infos[i].w_delta
           |> (vec3fp.+) tri_infos[i].w_bias
         in if is_inside_triangle w
            then let weights = (vec3f.*) tri_infos[i].inv_area_2 ((vec3fp.map) fixedpoint.to_f32 w) |> vec3f.to_tuple
@@ -206,6 +205,7 @@ module mk_rasterizer (Config: ConfigSpec) (Varying: VaryingSpec) (Target: {type 
     let xmax = fixedpoint.max (fixedpoint.max p0.x p1.x) p2.x
     let ymin = fixedpoint.min (fixedpoint.min p0.y p1.y) p2.y
     let ymax = fixedpoint.max (fixedpoint.max p0.y p1.y) p2.y
+    let w_min = calc_wcoeffs tup {x = fixedpoint.i32 0, y = fixedpoint.i32 0}
     in { bbox =
            { xmin = fixedpoint.to_i64 xmin
            , xmax = fixedpoint.to_i64 xmax
@@ -218,6 +218,7 @@ module mk_rasterizer (Config: ConfigSpec) (Varying: VaryingSpec) (Target: {type 
            , tri.2 with pos = p2
            )
        , inv_area_2
+       , w_min
        , w_delta
        , w_bias
        }
