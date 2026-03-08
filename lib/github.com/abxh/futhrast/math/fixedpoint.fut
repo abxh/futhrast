@@ -5,7 +5,7 @@
 -- Inspiration: github.com/MikeLankamp/fpm
 --
 -- exposes:
--- module fixedpoint = mk_fixedpoint abstract_i32
+-- module fixedpoint = mk_fixedpoint abstract_i64
 -- module vec2fp = mk_vspace2 fixedpoint
 -- module vec3fp = mk_vspace3 fixedpoint
 -- module vec4fp = mk_vspace4 fixedpoint
@@ -13,11 +13,11 @@
 import "vec"
 
 local
-module type abstract_i32_spec = {
+module type abstract_i64_spec = {
   type t
 
-  val raw : i32 -> t
-  val to_raw : t -> i32
+  val raw : i64 -> t
+  val to_raw : t -> i64
 
   val neg : t -> t
   val (+) : t -> t -> t
@@ -43,14 +43,14 @@ module type abstract_i32_spec = {
 }
 
 local
-module abstract_i32 : abstract_i32_spec = {
+module abstract_i64 : abstract_i64_spec = {
   def raw = id
   def to_raw = id
 
-  def to_f32 = f32.i32
-  def to_i32 = id
+  def to_f32 = f32.i64
+  def to_i32 = i32.i64
 
-  open i32
+  open i64
 }
 
 local
@@ -58,8 +58,8 @@ module type mk_fixedpoint_spec = {
   type t
   val num_fractional_bits : i64
 
-  val raw : i32 -> t
-  val to_raw : t -> i32
+  val raw : i64 -> t
+  val to_raw : t -> i64
 
   val zero : t
   val one : t
@@ -86,7 +86,7 @@ module type mk_fixedpoint_spec = {
 }
 
 local
-module mk_fixedpoint (V: abstract_i32_spec) : mk_fixedpoint_spec = {
+module mk_fixedpoint (V: abstract_i64_spec) : mk_fixedpoint_spec = {
   type t = V.t
 
   def num_fractional_bits : i64 = 8
@@ -99,12 +99,12 @@ module mk_fixedpoint (V: abstract_i32_spec) : mk_fixedpoint_spec = {
   def (-) = (V.-)
 
   def (*) (lhs: V.t) (rhs: V.t) =
-    let (lhs', rhs') = (i64.i32 <| V.to_raw lhs, i64.i32 <| V.to_raw rhs)
-    in (i64.>>) ((i64.*) lhs' rhs') num_fractional_bits |> i32.i64 |> V.raw
+    let (lhs', rhs') = (V.to_raw lhs, V.to_raw rhs)
+    in (i64.>>) ((i64.*) lhs' rhs') num_fractional_bits |> V.raw
 
   def (/) (lhs: V.t) (rhs: V.t) =
-    let (lhs', rhs') = (i64.i32 <| V.to_raw lhs, i64.i32 <| V.to_raw rhs)
-    in ((i64./) ((i64.<<) lhs' num_fractional_bits) rhs') |> i32.i64 |> V.raw
+    let (lhs', rhs') = (V.to_raw lhs, V.to_raw rhs)
+    in ((i64./) ((i64.<<) lhs' num_fractional_bits) rhs') |> V.raw
 
   def (<=) = (V.<=)
   def (>=) = (V.>=)
@@ -115,10 +115,10 @@ module mk_fixedpoint (V: abstract_i32_spec) : mk_fixedpoint_spec = {
   def abs = (V.abs)
 
   def to_f32 (x: V.t) : f32 =
-    f32.from_fraction (i64.i32 <| V.to_raw x) (1 << num_fractional_bits)
+    f32.from_fraction (V.to_raw x) (1 << num_fractional_bits)
 
   def to_i32 (x: V.t) : i32 =
-    (i32.>>) (V.to_raw x) (i32.i64 num_fractional_bits)
+    (i64.>>) (V.to_raw x) num_fractional_bits |> i32.i64
 
   def to_i64 = to_i32 >-> i64.i32
 
@@ -134,7 +134,7 @@ module mk_fixedpoint (V: abstract_i32_spec) : mk_fixedpoint_spec = {
   def one = i32 1
 }
 
-module fixedpoint = mk_fixedpoint abstract_i32
+module fixedpoint = mk_fixedpoint abstract_i64
 module vec2fp = mk_vspace2 fixedpoint
 module vec3fp = mk_vspace3 fixedpoint
 module vec4fp = mk_vspace4 fixedpoint
