@@ -227,10 +227,10 @@ module mk_rasterizer (Config: ConfigSpec) (Varying: VaryingSpec) (Target: {type 
     let w_bias = calc_triangle_edge_bias tup
     let w_delta = calc_delta tup
     let (p0, p1, p2) = tup
-    let xmin = fixedpoint.min (fixedpoint.min p0.x p1.x) p2.x
-    let xmax = fixedpoint.max (fixedpoint.max p0.x p1.x) p2.x
-    let ymin = fixedpoint.min (fixedpoint.min p0.y p1.y) p2.y
-    let ymax = fixedpoint.max (fixedpoint.max p0.y p1.y) p2.y
+    let xmin = p0.x `fixedpoint.min` p1.x `fixedpoint.min` p2.x
+    let xmax = p0.x `fixedpoint.max` p1.x `fixedpoint.max` p2.x
+    let ymin = p0.y `fixedpoint.min` p1.y `fixedpoint.min` p2.y
+    let ymax = p0.y `fixedpoint.max` p1.y `fixedpoint.max` p2.y
     let w_min = calc_wcoeffs tup {x = fixedpoint.i32 0, y = fixedpoint.i32 0}
     in { bbox =
            { xmin = fixedpoint.to_i64 xmin
@@ -245,10 +245,24 @@ module mk_rasterizer (Config: ConfigSpec) (Varying: VaryingSpec) (Target: {type 
        , w_bias
        }
 
-  def rasterize (plot: plot_t)
-                (tris: []triangle Varying.t)
-                (fb: Framebuffer.t) : Framebuffer.t =
+  -- note: measure area of bboxes, not triangles
+
+  def rasterize_large_or_few (plot: plot_t)
+                             (tris: []triangle Varying.t)
+                             (fb: Framebuffer.t) : Framebuffer.t =
+    let tris = map (conv_to_triangle_fp >-> calc_triangle_info) tris
+    let tiles' = map (map (\tile -> rasterize_tile plot tile tris)) fb.tiles
+    in fb with tiles = tiles'
+
+  def rasterize_medium (plot: plot_t)
+                       (tris: []triangle Varying.t)
+                       (fb: Framebuffer.t) : Framebuffer.t =
     let tris = map (conv_to_triangle_fp >-> calc_triangle_info) tris
     let tiles' = map (map (\tile -> rasterize_tile plot tile (filter (calc_tile_tri_mask tile.bbox) tris))) fb.tiles
     in fb with tiles = tiles'
+
+  def rasterize_small_and_many (_: plot_t)
+                               (_: []triangle Varying.t)
+                               (_: Framebuffer.t) : Framebuffer.t =
+    (???)
 }
