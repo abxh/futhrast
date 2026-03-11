@@ -1,4 +1,5 @@
 import "../../diku-dk/segmented/segmented"
+import "../../diku-dk/containers/bitset"
 import "../../diku-dk/sorts/radix_sort"
 
 import "math/vec"
@@ -156,29 +157,24 @@ module mk_rasterizer (Config: ConfigSpec) (Varying: VaryingSpec) (Target: {type 
     , ymax: a
     }
 
+  type triangle_t = triangle Varying.t
   type triangle_fp_t = triangle_fp Varying.t
 
   local
   type triangle_info_t =
-    { tri: triangle_fp_t
+    { tri: triangle_t
+    , tri_fp: triangle_fp_t
     , bbox: bbox2D i64
     , inv_area_2: f32
     , w_min: vec3fp.t
+    , w_min_w_bias: vec3fp.t
     , w_delta: (vec3fp.t, vec3fp.t)
     , w_bias: vec3fp.t
     }
 
   local type tile_t = framebuffer_tile [Config.tile_size] Target.t
 
-  def calc_tri_value_at (p: vec2fp.t) (tri: triangle_info_t) =
-    let w = p |> w_at tri.w_min tri.w_delta |> (vec3fp.+) tri.w_bias
-    in if is_inside_triangle w
-       then let weights = (vec3f.*) tri.inv_area_2 ((vec3fp.map) fixedpoint.to_f32 w) |> vec3f.to_tuple
-            let pf = (Fragment.barycentric) (conv_to_triangle_float tri.tri) weights
-            in (pf, pf.depth)
-       else (Fragment.zero_pfragment, f32.lowest)
-
-  def argmax [n] (xs: []f32) : (f32, i64) =
+  def argmax_f32 [n] (xs: []f32) : (f32, i64) =
     reduce_comm (\(vx, ix) (vy, iy) ->
                    if vx > vy || (vx == vy && ix < iy)
                    then (vx, ix)
@@ -189,12 +185,26 @@ module mk_rasterizer (Config: ConfigSpec) (Varying: VaryingSpec) (Target: {type 
   def rasterize_tile (plot: plot_t)
                      (tile: tile_t)
                      (tris: []triangle_info_t) : tile_t =
+    let px = (fixedpoint.+) (fixedpoint.i64 (tile.bbox.xmin)) (fixedpoint.f32 0.5)
+    let py = (fixedpoint.+) (fixedpoint.i64 (tile.bbox.ymin)) (fixedpoint.f32 0.5)
     let plot_f (by: i64) (bx: i64) =
-      let px = (fixedpoint.+) (fixedpoint.i64 (bx + tile.bbox.xmin)) (fixedpoint.f32 0.5)
-      let py = (fixedpoint.+) (fixedpoint.i64 (by + tile.bbox.ymin)) (fixedpoint.f32 0.5)
-      let p = {x = px, y = py}
-      let (pfs, depths) = map (calc_tri_value_at p) tris |> unzip
-      let (best_depth, i) = argmax depths
+      let p =
+        { x = (fixedpoint.+) px (fixedpoint.i64 bx)
+        , y = (fixedpoint.+) py (fixedpoint.i64 by)
+        }
+      let (pfs, depths) =
+        tris
+        |> map (\tri ->
+                  let w = w_at tri.w_min_w_bias tri.w_delta p
+                  in if is_inside_triangle w
+                     then let weights =
+                            (vec3f.*) tri.inv_area_2 ((vec3fp.map) fixedpoint.to_f32 w)
+                            |> vec3f.to_tuple
+                          let pf = (Fragment.barycentric) tri.tri weights
+                          in (pf, pf.depth)
+                     else (Fragment.zero_pfragment, f32.lowest))
+        |> unzip
+      let (best_depth, i) = argmax_f32 depths
       in if (f32.>) best_depth tile.depth[by][bx]
          then (plot pfs[i], best_depth)
          else (tile.target[by][bx], tile.depth[by][bx])
@@ -204,6 +214,41 @@ module mk_rasterizer (Config: ConfigSpec) (Varying: VaryingSpec) (Target: {type 
       |> unzip
       |> (\(x, y) -> (unflatten x, unflatten y))
     in tile with target = target with depth = depth
+
+  def calc_triangle_info (tri: triangle_t) : triangle_info_t =
+    let tri_fp = conv_to_triangle_fp tri
+    let tup = get_triangle_fp_pos tri_fp
+    let inv_area_2 = calc_tri_area_2 tup |> fixedpoint.to_f32 |> (\x -> (f32./) 1 x)
+    let w_bias = calc_triangle_edge_bias tup
+    let w_delta = calc_delta tup
+    let (p0, p1, p2) = tup
+    let xmin = p0.x `fixedpoint.min` p1.x `fixedpoint.min` p2.x
+    let xmax = p0.x `fixedpoint.max` p1.x `fixedpoint.max` p2.x
+    let ymin = p0.y `fixedpoint.min` p1.y `fixedpoint.min` p2.y
+    let ymax = p0.y `fixedpoint.max` p1.y `fixedpoint.max` p2.y
+    let w_min = calc_wcoeffs tup {x = fixedpoint.i32 0, y = fixedpoint.i32 0}
+    let w_min_w_bias = (vec3fp.+) w_min w_bias
+    in { bbox =
+           { xmin = fixedpoint.to_i64 xmin
+           , xmax = fixedpoint.to_i64 xmax
+           , ymin = fixedpoint.to_i64 ymin
+           , ymax = fixedpoint.to_i64 ymax
+           }
+       , tri
+       , tri_fp
+       , inv_area_2
+       , w_min
+       , w_min_w_bias
+       , w_delta
+       , w_bias
+       }
+
+  def rasterize (plot: plot_t)
+                (tris: []triangle Varying.t)
+                (fb: Framebuffer.t) : Framebuffer.t =
+    let tris = map calc_triangle_info tris
+    let tiles' = map (map (\tile -> rasterize_tile plot tile tris)) fb.tiles
+    in fb with tiles = tiles'
 
   def calc_tile_tri_mask (tile_bbox: bbox2D i64) (tri: triangle_info_t) =
     let w0 = w_at tri.w_min tri.w_delta <| {x = fixedpoint.i64 tile_bbox.xmin, y = fixedpoint.i64 tile_bbox.ymin}
@@ -221,48 +266,96 @@ module mk_rasterizer (Config: ConfigSpec) (Varying: VaryingSpec) (Target: {type 
        || is_inside_triangle w3
        || tri_inside_tile
 
-  def calc_triangle_info (tri: triangle_fp_t) : triangle_info_t =
-    let tup = get_triangle_fp_pos tri
-    let inv_area_2 = calc_tri_area_2 tup |> fixedpoint.to_f32 |> (\x -> (f32./) 1 x)
-    let w_bias = calc_triangle_edge_bias tup
-    let w_delta = calc_delta tup
-    let (p0, p1, p2) = tup
-    let xmin = p0.x `fixedpoint.min` p1.x `fixedpoint.min` p2.x
-    let xmax = p0.x `fixedpoint.max` p1.x `fixedpoint.max` p2.x
-    let ymin = p0.y `fixedpoint.min` p1.y `fixedpoint.min` p2.y
-    let ymax = p0.y `fixedpoint.max` p1.y `fixedpoint.max` p2.y
-    let w_min = calc_wcoeffs tup {x = fixedpoint.i32 0, y = fixedpoint.i32 0}
-    in { bbox =
-           { xmin = fixedpoint.to_i64 xmin
-           , xmax = fixedpoint.to_i64 xmax
-           , ymin = fixedpoint.to_i64 ymin
-           , ymax = fixedpoint.to_i64 ymax
-           }
-       , tri = (tri.0 with pos = p0, tri.1 with pos = p1, tri.2 with pos = p2)
-       , inv_area_2
-       , w_min
-       , w_delta
-       , w_bias
-       }
-
-  -- note: measure area of bboxes, not triangles
-
-  def rasterize_large_or_few (plot: plot_t)
-                             (tris: []triangle Varying.t)
-                             (fb: Framebuffer.t) : Framebuffer.t =
-    let tris = map (conv_to_triangle_fp >-> calc_triangle_info) tris
-    let tiles' = map (map (\tile -> rasterize_tile plot tile tris)) fb.tiles
-    in fb with tiles = tiles'
-
-  def rasterize_medium (plot: plot_t)
-                       (tris: []triangle Varying.t)
-                       (fb: Framebuffer.t) : Framebuffer.t =
-    let tris = map (conv_to_triangle_fp >-> calc_triangle_info) tris
+  def rasterize_with_immediate_filter (plot: plot_t)
+                                      (tris: []triangle Varying.t)
+                                      (fb: Framebuffer.t) : Framebuffer.t =
+    let tris = map calc_triangle_info tris
     let tiles' = map (map (\tile -> rasterize_tile plot tile (filter (calc_tile_tri_mask tile.bbox) tris))) fb.tiles
     in fb with tiles = tiles'
 
-  def rasterize_small_and_many (_: plot_t)
-                               (_: []triangle Varying.t)
-                               (_: Framebuffer.t) : Framebuffer.t =
-    (???)
+  local module bitset_u64 = mk_bitset u64
+
+  def rasterize_with_bitset_filter (plot: plot_t)
+                                   (tris: []triangle Varying.t)
+                                   (fb: Framebuffer.t) =
+    let tris = map calc_triangle_info tris
+    let tiles = flatten fb.tiles
+    let tri_masks =
+      map (\tri ->
+             (tiles
+              |> map (\tile -> calc_tile_tri_mask tile.bbox tri)
+              :> [(length tiles / 64) * 64]bool)
+             |> unflatten
+             |> map (\row -> reduce (|) 0u64 (map2 (\b i -> if b then 1u64 << (u64.i64 i) else 0u64) row (iota 64)))
+             |> bitset_u64.from_bit_array (length tiles))
+          tris
+    let tile_counts =
+      map (\tile_id ->
+             indices tris
+             |> map (\tri_id -> bitset_u64.member tile_id tri_masks[tri_id])
+             |> map (i64.bool)
+             |> reduce (+) 0)
+          (indices tiles)
+    let tiles' =
+      map2 (\tile tile_id ->
+              let tiles' =
+                scatter (replicate tile_counts[tile_id] 0)
+                        (indices tris)
+                        (indices tris |> map (\tri_id -> if bitset_u64.member tile_id tri_masks[tri_id] then tri_id else -1))
+                |> map (\i -> tris[i])
+              in rasterize_tile plot tile tiles')
+           tiles
+           (indices tiles)
+      |> unflatten
+    in fb with tiles = tiles'
+
+  def exscan f ne xs =
+    map2 (\i x -> if i == 0 then ne else x)
+         (indices xs)
+         (rotate (-1) (scan f ne xs))
+
+  def rasterize_with_expand_sort (plot: plot_t)
+                                 (tris: []triangle Varying.t)
+                                 (fb: framebuffer_t) : framebuffer_t =
+    let (sorted_tri_indices, tile_offsets, tile_count) =
+      let get_tri_tile_bounds_f (tri_info: triangle_info_t) =
+        let x0 = tri_info.bbox.xmin / Config.tile_size
+        let y0 = tri_info.bbox.ymin / Config.tile_size
+        let x1 = tri_info.bbox.xmax / Config.tile_size
+        let y1 = tri_info.bbox.ymax / Config.tile_size
+        let w = x1 - x0 + 1
+        let h = y1 - y0 + 1
+        in {x0, y0, w, h}
+      let tri_infos = map calc_triangle_info tris
+      let tri_tile_bounds = map get_tri_tile_bounds_f tri_infos
+      let counts = map (\{x0 = _, y0 = _, w, h} -> w * h) tri_tile_bounds
+      let (tile_ids, tri_indices) =
+        expand (\i -> counts[i])
+               (\i di ->
+                  let {x0, y0, w, h = _} = tri_tile_bounds[i]
+                  let dx = di % w
+                  let dy = di / w
+                  let tri_id = (y0 + dy) * fb.tiles_w + (x0 + dx)
+                  in (tri_id, i))
+               (iota (length tris))
+        |> unzip
+      let (sorted_tile_ids, sorted_tri_indices) =
+        blocked_radix_sort_int_by_key 256 (.0) 64 i64.get_bit (zip tile_ids tri_indices) |> unzip
+      let num_tiles = fb.tiles_w * fb.tiles_h
+      let tile_count = reduce_by_index (replicate num_tiles 0) (+) 0 sorted_tile_ids (map (\_ -> 1) sorted_tile_ids)
+      let tile_offsets = exscan (+) 0 tile_count
+      in (sorted_tri_indices, tile_offsets, tile_count)
+    let tris = map calc_triangle_info tris
+    let tiles_flattend = fb.tiles |> flatten
+    let tiles' =
+      zip tiles_flattend (indices tiles_flattend)
+      |> map (\(tile, tile_id) ->
+                let tris' =
+                  sorted_tri_indices
+                  |> drop tile_offsets[tile_id]
+                  |> take tile_count[tile_id]
+                  |> map (\i -> tris[i])
+                in rasterize_tile plot tile tris')
+      |> unflatten
+    in fb with tiles = tiles'
 }

@@ -110,7 +110,7 @@ module lys : lys with text_content = lys_text_content.text_content = {
       ]
       |> map (\(v0, v1, v2) -> (f v0, f v1, f v2))
     in Framebuffer.init {w = s.w, h = s.h} argb.black
-       |> Rasterizer.rasterize_medium (\v -> v.attr) ts
+       |> Rasterizer.rasterize_with_bitset_filter (\v -> v.attr) ts
        |> Framebuffer.get_target
 }
 

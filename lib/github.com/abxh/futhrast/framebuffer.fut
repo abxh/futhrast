@@ -48,7 +48,7 @@ module mk_framebuffer (Config: ConfigSpec) (Target: {type t})
 
   def init {w = w: i64, h = h: i64} (target_default: target_t) : t =
     let div_rounded_up_f (q: i64) (r: i64) = (q + r - 1) / r
-    let tiles_h = div_rounded_up_f h tile_size
+    let tiles_h = div_rounded_up_f (div_rounded_up_f h tile_size) 64 * 64
     let tiles_w = div_rounded_up_f w tile_size
     let tiles_f =
       (\y x ->
@@ -63,8 +63,8 @@ module mk_framebuffer (Config: ConfigSpec) (Target: {type t})
          })
     in { w
        , h
-       , tiles_w
-       , tiles_h
+       , tiles_w = tiles_w
+       , tiles_h = tiles_h
        , tiles = tabulate_2d tiles_h tiles_w tiles_f
        }
 
@@ -76,5 +76,5 @@ module mk_framebuffer (Config: ConfigSpec) (Target: {type t})
                    let ux = x / tile_size
                    let ly = y % tile_size
                    let lx = x % tile_size
-                   in s.tiles[uy][ux].target[ly][lx])
+                   in s.tiles[uy, ux].target[ly, lx])
 }
