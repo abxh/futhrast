@@ -17,7 +17,7 @@ module type VSpaceSpec = {
   type t
 
   -- | the vector value type
-  type value_t
+  type value
 
   -- | zero vector
   val zero : t
@@ -32,34 +32,34 @@ module type VSpaceSpec = {
   val (-) : t -> t -> t
 
   -- | element-wise scaling
-  val (*) : value_t -> t -> t
+  val (*) : value -> t -> t
 
   -- | element-wise inverse scaling
-  val (/) : t -> value_t -> t
+  val (/) : t -> value -> t
 
   -- | element-wise inverse scaled by some scalar
-  val (/.) : value_t -> t -> t
+  val (/.) : value -> t -> t
 
   -- | element-wise multiplication (hadamard product)
   val hadamard : t -> t -> t
 
   -- | dot product
-  val dot : t -> t -> value_t
+  val dot : t -> t -> value
 
   -- | perform a left fold over vector elements
-  val foldl 'a : (a -> value_t -> a) -> a -> t -> a
+  val foldl 'a : (a -> value -> a) -> a -> t -> a
 
   -- | perform a right fold over vector elements
-  val foldr 'a : (value_t -> a -> a) -> a -> t -> a
+  val foldr 'a : (value -> a -> a) -> a -> t -> a
 
   -- | vector from replicated value
-  val replicate : value_t -> t
+  val replicate : value -> t
 
   -- | get the element at some position
-  val get : i64 -> t -> value_t
+  val get : i64 -> t -> value
 
   -- | set the element at some position
-  val set : i64 -> value_t -> t -> t
+  val set : i64 -> value -> t -> t
 }
 
 local
@@ -67,7 +67,7 @@ module type FVSpaceSpec = {
   include VSpaceSpec
 
   -- | vector norm
-  val norm : t -> value_t
+  val norm : t -> value
 
   -- | normalize vector
   val normalize : t -> t
@@ -95,245 +95,245 @@ module type FScalarSpec = {
 
 local
 module type VSpaceSpec2 = {
-  type value_t
+  type value
 
   include VSpaceSpec
-  with value_t = value_t
-  with t = {x: value_t, y: value_t}
+  with value = value
+  with t = {x: value, y: value}
 
   -- | "2d" cross product (area of parallelogram spanned by the two vectors)
-  val cross : t -> t -> value_t
+  val cross : t -> t -> value
 
   -- | map a vector component-wise
-  val map 'a : (value_t -> a) -> t -> {x: a, y: a}
+  val map 'a : (value -> a) -> t -> {x: a, y: a}
 
   -- | map two vectors component-wise
-  val map2 'a : (value_t -> value_t -> a) -> t -> t -> {x: a, y: a}
+  val map2 'a : (value -> value -> a) -> t -> t -> {x: a, y: a}
 
   -- convert to array
-  val to_array : t -> [2]value_t
+  val to_array : t -> [2]value
 
   -- convert from array
-  val from_array : [2]value_t -> t
+  val from_array : [2]value -> t
 
   -- convert to tuple
-  val to_tuple : t -> (value_t, value_t)
+  val to_tuple : t -> (value, value)
 
   -- convert from tuple
-  val from_tuple : (value_t, value_t) -> t
+  val from_tuple : (value, value) -> t
 }
 
 local
 module type FVSpaceSpec2 = {
-  type value_t
+  type value
 
   include FVSpaceSpec
-  with value_t = value_t
-  with t = {x: value_t, y: value_t}
+  with value = value
+  with t = {x: value, y: value}
 
   -- | map a vector component-wise
-  val map 'a : (value_t -> a) -> t -> {x: a, y: a}
+  val map 'a : (value -> a) -> t -> {x: a, y: a}
 
   -- | map two vectors component-wise
-  val map2 'a : (value_t -> value_t -> a) -> t -> t -> {x: a, y: a}
+  val map2 'a : (value -> value -> a) -> t -> t -> {x: a, y: a}
 
   -- | "2d" cross product (area of parallelogram spanned by the two vectors)
-  val cross : t -> t -> value_t
+  val cross : t -> t -> value
 
   -- convert to array
-  val to_array : t -> [2]value_t
+  val to_array : t -> [2]value
 
   -- convert from array
-  val from_array : [2]value_t -> t
+  val from_array : [2]value -> t
 
   -- convert to tuple
-  val to_tuple : t -> (value_t, value_t)
+  val to_tuple : t -> (value, value)
 
   -- convert from tuple
-  val from_tuple : (value_t, value_t) -> t
+  val from_tuple : (value, value) -> t
 }
 
 local
 module type VSpaceSpec3 = {
-  type value_t
+  type value
 
   include VSpaceSpec
-  with value_t = value_t
-  with t = {x: value_t, y: value_t, z: value_t}
+  with value = value
+  with t = {x: value, y: value, z: value}
 
   -- | map a vector component-wise
-  val map 'a : (value_t -> a) -> t -> {x: a, y: a, z: a}
+  val map 'a : (value -> a) -> t -> {x: a, y: a, z: a}
 
   -- | map two vectors component-wise
-  val map2 'a : (value_t -> value_t -> a) -> t -> t -> {x: a, y: a, z: a}
+  val map2 'a : (value -> value -> a) -> t -> t -> {x: a, y: a, z: a}
 
   -- convert to array
-  val to_array : t -> [3]value_t
+  val to_array : t -> [3]value
 
   -- convert from array
-  val from_array : [3]value_t -> t
+  val from_array : [3]value -> t
 
   -- | cross product
   val cross : t -> t -> t
 
   -- convert to tuple
-  val to_tuple : t -> (value_t, value_t, value_t)
+  val to_tuple : t -> (value, value, value)
 
   -- convert from tuple
-  val from_tuple : (value_t, value_t, value_t) -> t
+  val from_tuple : (value, value, value) -> t
 }
 
 local
 module type FVSpaceSpec3 = {
-  type value_t
+  type value
 
   include VSpaceSpec
-  with value_t = value_t
-  with t = {x: value_t, y: value_t, z: value_t}
+  with value = value
+  with t = {x: value, y: value, z: value}
 
   -- | map a vector component-wise
-  val map 'a : (value_t -> a) -> t -> {x: a, y: a, z: a}
+  val map 'a : (value -> a) -> t -> {x: a, y: a, z: a}
 
   -- | map two vectors component-wise
-  val map2 'a : (value_t -> value_t -> a) -> t -> t -> {x: a, y: a, z: a}
+  val map2 'a : (value -> value -> a) -> t -> t -> {x: a, y: a, z: a}
 
   -- convert to array
-  val to_array : t -> [3]value_t
+  val to_array : t -> [3]value
 
   -- convert from array
-  val from_array : [3]value_t -> t
+  val from_array : [3]value -> t
 
   -- | cross product
   val cross : t -> t -> t
 
   -- convert to tuple
-  val to_tuple : t -> (value_t, value_t, value_t)
+  val to_tuple : t -> (value, value, value)
 
   -- convert from tuple
-  val from_tuple : (value_t, value_t, value_t) -> t
+  val from_tuple : (value, value, value) -> t
 }
 
 local
 module type VSpaceSpec4 = {
-  type value_t
+  type value
 
   include VSpaceSpec
-  with value_t = value_t
-  with t = {x: value_t, y: value_t, z: value_t, w: value_t}
+  with value = value
+  with t = {x: value, y: value, z: value, w: value}
 
   -- | map a vector component-wise
-  val map 'a : (value_t -> a) -> t -> {x: a, y: a, z: a, w: a}
+  val map 'a : (value -> a) -> t -> {x: a, y: a, z: a, w: a}
 
   -- | map two vectors component-wise
-  val map2 'a : (value_t -> value_t -> a) -> t -> t -> {x: a, y: a, z: a, w: a}
+  val map2 'a : (value -> value -> a) -> t -> t -> {x: a, y: a, z: a, w: a}
 
   -- convert to array
-  val to_array : t -> [4]value_t
+  val to_array : t -> [4]value
 
   -- convert from array
-  val from_array : [4]value_t -> t
+  val from_array : [4]value -> t
 
   -- convert to tuple
-  val to_tuple : t -> (value_t, value_t, value_t, value_t)
+  val to_tuple : t -> (value, value, value, value)
 
   -- convert from tuple
-  val from_tuple : (value_t, value_t, value_t, value_t) -> t
+  val from_tuple : (value, value, value, value) -> t
 }
 
 local
 module type FVSpaceSpec4 = {
-  type value_t
+  type value
 
   include VSpaceSpec
-  with value_t = value_t
-  with t = {x: value_t, y: value_t, z: value_t, w: value_t}
+  with value = value
+  with t = {x: value, y: value, z: value, w: value}
 
   -- | map a vector component-wise
-  val map 'a : (value_t -> a) -> t -> {x: a, y: a, z: a, w: a}
+  val map 'a : (value -> a) -> t -> {x: a, y: a, z: a, w: a}
 
   -- | map two vectors component-wise
-  val map2 'a : (value_t -> value_t -> a) -> t -> t -> {x: a, y: a, z: a, w: a}
+  val map2 'a : (value -> value -> a) -> t -> t -> {x: a, y: a, z: a, w: a}
 
   -- convert to array
-  val to_array : t -> [4]value_t
+  val to_array : t -> [4]value
 
   -- convert from array
-  val from_array : [4]value_t -> t
+  val from_array : [4]value -> t
 
   -- convert to tuple
-  val to_tuple : t -> (value_t, value_t, value_t, value_t)
+  val to_tuple : t -> (value, value, value, value)
 
   -- convert from tuple
-  val from_tuple : (value_t, value_t, value_t, value_t) -> t
+  val from_tuple : (value, value, value, value) -> t
 }
 
-module mk_vspace2 (scalar: ScalarSpec) : VSpaceSpec2 with value_t = scalar.t = {
-  type value_t = scalar.t
-  type t = {x: value_t, y: value_t}
+module mk_vspace2 (scalar: ScalarSpec) : VSpaceSpec2 with value = scalar.t = {
+  type value = scalar.t
+  type t = {x: value, y: value}
 
-  def map 'a (f: value_t -> a) (v: t) : {x: a, y: a} =
+  def map 'a (f: value -> a) (v: t) : {x: a, y: a} =
     let x = f v.x
     let y = f v.y
     in {x, y}
 
-  def map2 'a (f: value_t -> value_t -> a) (lhs: t) (rhs: t) : {x: a, y: a} =
+  def map2 'a (f: value -> value -> a) (lhs: t) (rhs: t) : {x: a, y: a} =
     let x = f lhs.x rhs.x
     let y = f lhs.y rhs.y
     in {x, y}
 
   def (+) = map2 (scalar.+)
   def (-) = map2 (scalar.-)
-  def (*) (s: value_t) (v: t) = map (\e -> (scalar.*) s e) v
-  def (/) (v: t) (s: value_t) = map (\e -> (scalar./) e s) v
-  def (/.) (s: value_t) (v: t) = map (\e -> (scalar./) s e) v
+  def (*) (s: value) (v: t) = map (\e -> (scalar.*) s e) v
+  def (/) (v: t) (s: value) = map (\e -> (scalar./) e s) v
+  def (/.) (s: value) (v: t) = map (\e -> (scalar./) s e) v
   def hadamard = map2 (scalar.*)
 
-  def foldl 'a (f: a -> value_t -> a) (acc: a) (v: t) : a =
+  def foldl 'a (f: a -> value -> a) (acc: a) (v: t) : a =
     f (f acc v.x) v.y
 
-  def foldr 'a (f: value_t -> a -> a) (acc: a) (v: t) : a =
+  def foldr 'a (f: value -> a -> a) (acc: a) (v: t) : a =
     f v.x (f v.y acc)
 
-  def replicate (e: value_t) : t =
+  def replicate (e: value) : t =
     {x = e, y = e}
 
   def to_tuple (v: t) = (v.x, v.y)
-  def from_tuple ((x, y): (value_t, value_t)) = {x, y}
+  def from_tuple ((x, y): (value, value)) = {x, y}
   def to_array (v: t) = [v.x, v.y]
-  def from_array (a: [2]value_t) = {x = a[0], y = a[1]}
+  def from_array (a: [2]value) = {x = a[0], y = a[1]}
 
-  def get (i: i64) (v: t) : value_t = (to_array v)[i]
-  def set (i: i64) (x: value_t) (v: t) : t = from_array ([v.x, v.y] with [i] = x)
+  def get (i: i64) (v: t) : value = (to_array v)[i]
+  def set (i: i64) (x: value) (v: t) : t = from_array ([v.x, v.y] with [i] = x)
 
   def zero : t = replicate (scalar.i32 0)
   def one : t = replicate (scalar.i32 1)
 
-  def dot (lhs: t) (rhs: t) : value_t =
+  def dot (lhs: t) (rhs: t) : value =
     foldl (scalar.+) (scalar.i32 0) (map2 (scalar.*) lhs rhs)
 
-  def cross (lhs: t) (rhs: t) : value_t =
+  def cross (lhs: t) (rhs: t) : value =
     let XY = (scalar.-) ((scalar.*) lhs.x rhs.y) ((scalar.*) rhs.x lhs.y)
     in XY
 }
 
-module mk_vspace2f (scalar: FScalarSpec) : FVSpaceSpec2 with value_t = scalar.t = {
+module mk_vspace2f (scalar: FScalarSpec) : FVSpaceSpec2 with value = scalar.t = {
   open mk_vspace2 scalar
 
   def norm (v: t) = scalar.sqrt (dot v v)
   def normalize (v: t) = v / norm v
 }
 
-module mk_vspace3 (scalar: ScalarSpec) : VSpaceSpec3 with value_t = scalar.t = {
-  type value_t = scalar.t
-  type t = {x: value_t, y: value_t, z: value_t}
+module mk_vspace3 (scalar: ScalarSpec) : VSpaceSpec3 with value = scalar.t = {
+  type value = scalar.t
+  type t = {x: value, y: value, z: value}
 
-  def map 'a (f: value_t -> a) (v: t) : {x: a, y: a, z: a} =
+  def map 'a (f: value -> a) (v: t) : {x: a, y: a, z: a} =
     let x = f v.x
     let y = f v.y
     let z = f v.z
     in {x, y, z}
 
-  def map2 'a (f: value_t -> value_t -> a) (lhs: t) (rhs: t) : {x: a, y: a, z: a} =
+  def map2 'a (f: value -> value -> a) (lhs: t) (rhs: t) : {x: a, y: a, z: a} =
     let x = f lhs.x rhs.x
     let y = f lhs.y rhs.y
     let z = f lhs.z rhs.z
@@ -341,32 +341,32 @@ module mk_vspace3 (scalar: ScalarSpec) : VSpaceSpec3 with value_t = scalar.t = {
 
   def (+) = map2 (scalar.+)
   def (-) = map2 (scalar.-)
-  def (*) (s: value_t) (v: t) = map (\e -> (scalar.*) s e) v
-  def (/) (v: t) (s: value_t) = map (\e -> (scalar./) e s) v
-  def (/.) (s: value_t) (v: t) = map (\e -> (scalar./) s e) v
+  def (*) (s: value) (v: t) = map (\e -> (scalar.*) s e) v
+  def (/) (v: t) (s: value) = map (\e -> (scalar./) e s) v
+  def (/.) (s: value) (v: t) = map (\e -> (scalar./) s e) v
   def hadamard = map2 (scalar.*)
 
-  def foldl 'a (f: a -> value_t -> a) (acc: a) (v: t) : a =
+  def foldl 'a (f: a -> value -> a) (acc: a) (v: t) : a =
     f (f (f acc v.x) v.y) v.z
 
-  def foldr 'a (f: value_t -> a -> a) (acc: a) (v: t) : a =
+  def foldr 'a (f: value -> a -> a) (acc: a) (v: t) : a =
     f v.x (f v.y (f v.z acc))
 
-  def replicate (e: value_t) : t =
+  def replicate (e: value) : t =
     {x = e, y = e, z = e}
 
   def to_tuple (v: t) = (v.x, v.y, v.z)
-  def from_tuple ((x, y, z): (value_t, value_t, value_t)) = {x, y, z}
+  def from_tuple ((x, y, z): (value, value, value)) = {x, y, z}
   def to_array (v: t) = [v.x, v.y, v.z]
-  def from_array (a: [3]value_t) = {x = a[0], y = a[1], z = a[2]}
+  def from_array (a: [3]value) = {x = a[0], y = a[1], z = a[2]}
 
-  def get (i: i64) (v: t) : value_t = (to_array v)[i]
-  def set (i: i64) (x: value_t) (v: t) : t = from_array ([v.x, v.y, v.z] with [i] = x)
+  def get (i: i64) (v: t) : value = (to_array v)[i]
+  def set (i: i64) (x: value) (v: t) : t = from_array ([v.x, v.y, v.z] with [i] = x)
 
   def zero : t = replicate (scalar.i32 0)
   def one : t = replicate (scalar.i32 1)
 
-  def dot (lhs: t) (rhs: t) : value_t =
+  def dot (lhs: t) (rhs: t) : value =
     foldl (scalar.+) (scalar.i32 0) (map2 (scalar.*) lhs rhs)
 
   def cross (lhs: t) (rhs: t) : t =
@@ -376,25 +376,25 @@ module mk_vspace3 (scalar: ScalarSpec) : VSpaceSpec3 with value_t = scalar.t = {
     in {x = YZ, y = ZX, z = XY}
 }
 
-module mk_vspace3f (scalar: FScalarSpec) : FVSpaceSpec3 with value_t = scalar.t = {
+module mk_vspace3f (scalar: FScalarSpec) : FVSpaceSpec3 with value = scalar.t = {
   open mk_vspace3 scalar
 
   def norm (v: t) = scalar.sqrt (dot v v)
   def normalize (v: t) = v / norm v
 }
 
-module mk_vspace4 (scalar: ScalarSpec) : VSpaceSpec4 with value_t = scalar.t = {
-  type value_t = scalar.t
-  type t = {x: value_t, y: value_t, z: value_t, w: value_t}
+module mk_vspace4 (scalar: ScalarSpec) : VSpaceSpec4 with value = scalar.t = {
+  type value = scalar.t
+  type t = {x: value, y: value, z: value, w: value}
 
-  def map 'a (f: value_t -> a) (v: t) : {x: a, y: a, z: a, w: a} =
+  def map 'a (f: value -> a) (v: t) : {x: a, y: a, z: a, w: a} =
     let x = f v.x
     let y = f v.y
     let z = f v.z
     let w = f v.w
     in {x, y, z, w}
 
-  def map2 'a (f: value_t -> value_t -> a) (lhs: t) (rhs: t) : {x: a, y: a, z: a, w: a} =
+  def map2 'a (f: value -> value -> a) (lhs: t) (rhs: t) : {x: a, y: a, z: a, w: a} =
     let x = f lhs.x rhs.x
     let y = f lhs.y rhs.y
     let z = f lhs.z rhs.z
@@ -403,36 +403,36 @@ module mk_vspace4 (scalar: ScalarSpec) : VSpaceSpec4 with value_t = scalar.t = {
 
   def (+) = map2 (scalar.+)
   def (-) = map2 (scalar.-)
-  def (*) (s: value_t) (v: t) = map (\e -> (scalar.*) s e) v
-  def (/) (v: t) (s: value_t) = map (\e -> (scalar./) e s) v
-  def (/.) (s: value_t) (v: t) = map (\e -> (scalar./) s e) v
+  def (*) (s: value) (v: t) = map (\e -> (scalar.*) s e) v
+  def (/) (v: t) (s: value) = map (\e -> (scalar./) e s) v
+  def (/.) (s: value) (v: t) = map (\e -> (scalar./) s e) v
   def hadamard = map2 (scalar.*)
 
-  def foldl 'a (f: a -> value_t -> a) (acc: a) (v: t) : a =
+  def foldl 'a (f: a -> value -> a) (acc: a) (v: t) : a =
     f (f (f (f acc v.x) v.y) v.z) v.w
 
-  def foldr 'a (f: value_t -> a -> a) (acc: a) (v: t) : a =
+  def foldr 'a (f: value -> a -> a) (acc: a) (v: t) : a =
     f v.x (f v.y (f v.z (f v.w acc)))
 
-  def replicate (e: value_t) : t =
+  def replicate (e: value) : t =
     {x = e, y = e, z = e, w = e}
 
   def to_tuple (v: t) = (v.x, v.y, v.z, v.w)
-  def from_tuple ((x, y, z, w): (value_t, value_t, value_t, value_t)) = {x, y, z, w}
+  def from_tuple ((x, y, z, w): (value, value, value, value)) = {x, y, z, w}
   def to_array (v: t) = [v.x, v.y, v.z, v.w]
-  def from_array (a: [4]value_t) = {x = a[0], y = a[1], z = a[2], w = a[3]}
+  def from_array (a: [4]value) = {x = a[0], y = a[1], z = a[2], w = a[3]}
 
-  def get (i: i64) (v: t) : value_t = (to_array v)[i]
-  def set (i: i64) (x: value_t) (v: t) : t = from_array ([v.x, v.y, v.z, v.w] with [i] = x)
+  def get (i: i64) (v: t) : value = (to_array v)[i]
+  def set (i: i64) (x: value) (v: t) : t = from_array ([v.x, v.y, v.z, v.w] with [i] = x)
 
   def zero : t = replicate (scalar.i32 0)
   def one : t = replicate (scalar.i32 1)
 
-  def dot (lhs: t) (rhs: t) : value_t =
+  def dot (lhs: t) (rhs: t) : value =
     foldl (scalar.+) (scalar.i32 0) (map2 (scalar.*) lhs rhs)
 }
 
-module mk_vspace4f (scalar: FScalarSpec) : FVSpaceSpec4 with value_t = scalar.t = {
+module mk_vspace4f (scalar: FScalarSpec) : FVSpaceSpec4 with value = scalar.t = {
   open mk_vspace4 scalar
 
   def norm (v: t) = scalar.sqrt (dot v v)

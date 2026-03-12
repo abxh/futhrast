@@ -1,4 +1,3 @@
-
 -- user-defined configuration
 module type ConfigSpec = {
   -- framebuffer tile size set to e.g. 16

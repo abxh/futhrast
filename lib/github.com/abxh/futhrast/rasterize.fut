@@ -136,12 +136,10 @@ module wcoeffs_fp = {
     w0 < fixedpoint.zero && w1 < fixedpoint.zero && w2 < fixedpoint.zero
 }
 
-module mk_rasterizer (Config: ConfigSpec) (Varying: VaryingSpec) (Target: {type t}) = {
-  local module Framebuffer = mk_framebuffer Config Target
+module mk_rasterizer (Config: ConfigSpec) (Varying: VaryingSpec) (Framebuffer: FramebufferSpec) = {
   local module Fragment = derive_fragment_ops Varying
 
-  type^ plot_t = Fragment.pfragment_t -> Target.t
-  type~ framebuffer_t = Framebuffer.t
+  type^ plot_t = Fragment.pfragment -> Framebuffer.target
 
   local open Config
   local open wcoeffs_fp
@@ -172,7 +170,7 @@ module mk_rasterizer (Config: ConfigSpec) (Varying: VaryingSpec) (Target: {type 
     , w_bias: vec3fp.t
     }
 
-  local type tile_t = framebuffer_tile [Config.tile_size] Target.t
+  local type tile_t = tile [Framebuffer.tile_size] Framebuffer.target
 
   def argmax_f32 [n] (xs: []f32) : (f32, i64) =
     reduce_comm (\(vx, ix) (vy, iy) ->
@@ -209,7 +207,7 @@ module mk_rasterizer (Config: ConfigSpec) (Varying: VaryingSpec) (Target: {type 
          then (plot pfs[i], best_depth)
          else (tile.target[by][bx], tile.depth[by][bx])
     let (target, depth) =
-      tabulate_2d tile_size tile_size plot_f
+      tabulate_2d Framebuffer.tile_size Framebuffer.tile_size plot_f
       |> flatten
       |> unzip
       |> (\(x, y) -> (unflatten x, unflatten y))
@@ -247,115 +245,6 @@ module mk_rasterizer (Config: ConfigSpec) (Varying: VaryingSpec) (Target: {type 
                 (tris: []triangle Varying.t)
                 (fb: Framebuffer.t) : Framebuffer.t =
     let tris = map calc_triangle_info tris
-    let tiles' = map (map (\tile -> rasterize_tile plot tile tris)) fb.tiles
-    in fb with tiles = tiles'
-
-  def calc_tile_tri_mask (tile_bbox: bbox2D i64) (tri: triangle_info_t) =
-    let w0 = w_at tri.w_min tri.w_delta <| {x = fixedpoint.i64 tile_bbox.xmin, y = fixedpoint.i64 tile_bbox.ymin}
-    let w1 = w_at tri.w_min tri.w_delta <| {x = fixedpoint.i64 tile_bbox.xmin, y = fixedpoint.i64 tile_bbox.ymax}
-    let w2 = w_at tri.w_min tri.w_delta <| {x = fixedpoint.i64 tile_bbox.xmax, y = fixedpoint.i64 tile_bbox.ymin}
-    let w3 = w_at tri.w_min tri.w_delta <| {x = fixedpoint.i64 tile_bbox.xmax, y = fixedpoint.i64 tile_bbox.ymax}
-    let tri_inside_tile =
-      tile_bbox.xmin <= tri.bbox.xmin
-      && tri.bbox.xmax <= tile_bbox.xmax
-      && tile_bbox.ymin <= tri.bbox.ymin
-      && tri.bbox.ymax <= tile_bbox.ymax
-    in is_inside_triangle w0
-       || is_inside_triangle w1
-       || is_inside_triangle w2
-       || is_inside_triangle w3
-       || tri_inside_tile
-
-  def rasterize_with_immediate_filter (plot: plot_t)
-                                      (tris: []triangle Varying.t)
-                                      (fb: Framebuffer.t) : Framebuffer.t =
-    let tris = map calc_triangle_info tris
-    let tiles' = map (map (\tile -> rasterize_tile plot tile (filter (calc_tile_tri_mask tile.bbox) tris))) fb.tiles
-    in fb with tiles = tiles'
-
-  local module bitset_u64 = mk_bitset u64
-
-  def rasterize_with_bitset_filter (plot: plot_t)
-                                   (tris: []triangle Varying.t)
-                                   (fb: Framebuffer.t) =
-    let tris = map calc_triangle_info tris
-    let tiles = flatten fb.tiles
-    let tri_masks =
-      map (\tri ->
-             (tiles
-              |> map (\tile -> calc_tile_tri_mask tile.bbox tri)
-              :> [(length tiles / 64) * 64]bool)
-             |> unflatten
-             |> map (\row -> reduce (|) 0u64 (map2 (\b i -> if b then 1u64 << (u64.i64 i) else 0u64) row (iota 64)))
-             |> bitset_u64.from_bit_array (length tiles))
-          tris
-    let tile_counts =
-      map (\tile_id ->
-             indices tris
-             |> map (\tri_id -> bitset_u64.member tile_id tri_masks[tri_id])
-             |> map (i64.bool)
-             |> reduce (+) 0)
-          (indices tiles)
-    let tiles' =
-      map2 (\tile tile_id ->
-              let tiles' =
-                scatter (replicate tile_counts[tile_id] 0)
-                        (indices tris)
-                        (indices tris |> map (\tri_id -> if bitset_u64.member tile_id tri_masks[tri_id] then tri_id else -1))
-                |> map (\i -> tris[i])
-              in rasterize_tile plot tile tiles')
-           tiles
-           (indices tiles)
-      |> unflatten
-    in fb with tiles = tiles'
-
-  def exscan f ne xs =
-    map2 (\i x -> if i == 0 then ne else x)
-         (indices xs)
-         (rotate (-1) (scan f ne xs))
-
-  def rasterize_with_expand_sort (plot: plot_t)
-                                 (tris: []triangle Varying.t)
-                                 (fb: framebuffer_t) : framebuffer_t =
-    let (sorted_tri_indices, tile_offsets, tile_count) =
-      let get_tri_tile_bounds_f (tri_info: triangle_info_t) =
-        let x0 = tri_info.bbox.xmin / Config.tile_size
-        let y0 = tri_info.bbox.ymin / Config.tile_size
-        let x1 = tri_info.bbox.xmax / Config.tile_size
-        let y1 = tri_info.bbox.ymax / Config.tile_size
-        let w = x1 - x0 + 1
-        let h = y1 - y0 + 1
-        in {x0, y0, w, h}
-      let tri_infos = map calc_triangle_info tris
-      let tri_tile_bounds = map get_tri_tile_bounds_f tri_infos
-      let counts = map (\{x0 = _, y0 = _, w, h} -> w * h) tri_tile_bounds
-      let (tile_ids, tri_indices) =
-        expand (\i -> counts[i])
-               (\i di ->
-                  let {x0, y0, w, h = _} = tri_tile_bounds[i]
-                  let dx = di % w
-                  let dy = di / w
-                  let tri_id = (y0 + dy) * fb.tiles_w + (x0 + dx)
-                  in (tri_id, i))
-               (iota (length tris))
-        |> unzip
-      let (sorted_tile_ids, sorted_tri_indices) =
-        blocked_radix_sort_int_by_key 256 (.0) 64 i64.get_bit (zip tile_ids tri_indices) |> unzip
-      let num_tiles = fb.tiles_w * fb.tiles_h
-      let tile_count = reduce_by_index (replicate num_tiles 0) (+) 0 sorted_tile_ids (map (\_ -> 1) sorted_tile_ids)
-      let tile_offsets = exscan (+) 0 tile_count
-      in (sorted_tri_indices, tile_offsets, tile_count)
-    let tris = map calc_triangle_info tris
-    let tiles_flattend = fb.tiles |> flatten
-    let tiles' =
-      zip tiles_flattend (indices tiles_flattend)
-      |> map (\(tile, tile_id) ->
-                let tris' =
-                  sorted_tri_indices
-                  |> drop tile_offsets[tile_id]
-                  |> take tile_count[tile_id]
-                  |> map (\i -> tris[i])
-                in rasterize_tile plot tile tris')
-      |> unflatten
-    in fb with tiles = tiles'
+    let tiles' = map (map (\tile -> rasterize_tile plot tile tris)) (Framebuffer.get_tiles fb)
+    in Framebuffer.set_tiles fb tiles'
 }

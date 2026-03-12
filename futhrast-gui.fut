@@ -2,6 +2,7 @@ import "lib/github.com/abxh/lys/lys"
 import "lib/github.com/abxh/futhrast/rasterize"
 import "lib/github.com/abxh/futhrast/framebuffer"
 import "lib/github.com/abxh/futhrast/fragment"
+import "lib/github.com/abxh/futhrast/config"
 
 type lys_state =
   { h: i64
@@ -27,23 +28,6 @@ module lys : lys with text_content = lys_text_content.text_content = {
 
   type state = lys_state
 
-  module Varying : VaryingSpec with t = argb.colour = {
-    type t = argb.colour
-    def zero = argb.black
-    def (+) = argb.add_linear
-    def (*) = flip argb.scale
-    def (-) x y = x + (-1 * y)
-    def (/) x s = (1 / s) * x
-  }
-
-  module Config = {
-    def tile_size : i64 = 8
-    def triangle_winding_order : #clockwise | #counterclockwise | #neither = #neither
-  }
-
-  module Framebuffer = mk_framebuffer Config {type t = argb.colour}
-  module Rasterizer = mk_rasterizer Config Varying {type t = argb.colour} 
-
   def grab_mouse = false
 
   def init (_: u32) (h: i64) (w: i64) : state =
@@ -64,6 +48,25 @@ module lys : lys with text_content = lys_text_content.text_content = {
     case #step td ->
       s with time = s.time + td
     case _ -> s
+
+  local
+  module Varying : VaryingSpec with t = argb.colour = {
+    type t = argb.colour
+    def zero = argb.black
+    def (+) = argb.add_linear
+    def (*) = flip argb.scale
+    def (-) x y = x + (-1 * y)
+    def (/) x s = (1 / s) * x
+  }
+
+  local
+  module Config = {
+    def tile_size : i64 = 8
+    def triangle_winding_order : #clockwise | #counterclockwise | #neither = #neither
+  }
+
+  local module Framebuffer = Framebuffer Config {type t = argb.colour}
+  local module Rasterizer = mk_rasterizer Config Varying Framebuffer
 
   def render (s: state) : [][]argb.colour =
     let t = f32.abs (f32.sin s.time * f32.sin s.time)
@@ -110,8 +113,8 @@ module lys : lys with text_content = lys_text_content.text_content = {
       ]
       |> map (\(v0, v1, v2) -> (f v0, f v1, f v2))
     in Framebuffer.init {w = s.w, h = s.h} argb.black
-       |> Rasterizer.rasterize_with_bitset_filter (\v -> v.attr) ts
-       |> Framebuffer.get_target
+       |> Rasterizer.rasterize (\v -> v.attr) ts
+       |> Framebuffer.get_target_buffer
 }
 
 -- {v0=(0,s.h-1), v1=(s.w-1,0), v2=(s.w-1,s.h-1)},
