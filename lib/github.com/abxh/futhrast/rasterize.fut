@@ -158,14 +158,6 @@ module mk_rasterizer (Config: ConfigSpec) (Varying: VaryingSpec) (Framebuffer: F
 
   local type tile_t = tile [Framebuffer.tile_size] Framebuffer.target
 
-  def argmax_f32 [n] (xs: []f32) : (f32, i64) =
-    reduce_comm (\(vx, ix) (vy, iy) ->
-                   if vx > vy || (vx == vy && ix < iy)
-                   then (vx, ix)
-                   else (vy, iy))
-                (f32.lowest, n)
-                (zip xs (iota n))
-
   def tri_pixel_at ({x, y}: vec2fp.t) (tri: triangle_info_t) =
     let w =
       (vec3fp.+) ((vec3fp.*) x tri.w_delta.0) ((vec3fp.*) y tri.w_delta.1)
@@ -178,22 +170,35 @@ module mk_rasterizer (Config: ConfigSpec) (Varying: VaryingSpec) (Framebuffer: F
             in (pf, pf.depth)
        else (Fragment.zero_pfragment, Fragment.zero_pfragment.depth)
 
+  def argmax_non_negative_f32 [n] (xs: []f32) : (f32, i64) =
+    reduce_comm (\(vx, ix) (vy, iy) ->
+                   if vx > vy || (vx == vy && ix < iy)
+                   then (vx, ix)
+                   else (vy, iy))
+                (-1, n)
+                (zip xs (iota n))
+
+  def best_pixel_at (plot: plot_t) {prev_target, prev_depth} (p: vec2fp.t) (tris: []triangle_info_t) =
+    let (possible_pfs, possible_depths) = tris |> map (tri_pixel_at p) |> unzip
+    let (best_depth, i) = argmax_non_negative_f32 possible_depths
+    in if (f32.>) best_depth prev_depth
+       then (plot possible_pfs[i], best_depth)
+       else (prev_target, prev_depth)
+
   def rasterize_tile (plot: plot_t)
-                     ({buffer, bbox}: *tile_t)
-                     (tris: []triangle_info_t) : *tile_t =
-    let px = (fixedpoint.+) (fixedpoint.i64 (bbox.xmin)) (fixedpoint.f32 0.5)
-    let py = (fixedpoint.+) (fixedpoint.i64 (bbox.ymin)) (fixedpoint.f32 0.5)
+                     (tile: tile_t)
+                     (tris: []triangle_info_t) : tile_t =
+    let px = (fixedpoint.+) (fixedpoint.i64 (tile.bbox.xmin)) (fixedpoint.f32 0.5)
+    let py = (fixedpoint.+) (fixedpoint.i64 (tile.bbox.ymin)) (fixedpoint.f32 0.5)
     let p = vec2fp.from_tuple (px, py)
     let buffer' =
-      loop buffer for by in 0..<Framebuffer.tile_size do
-        loop buffer for bx in 0..<Framebuffer.tile_size do
-          let p = vec2i.from_tuple (bx, by) |> vec2i.map fixedpoint.i64 |> (vec2fp.+) p
-          let (possible_pfs, possible_depths) = tris |> map (tri_pixel_at p) |> unzip
-          let (best_depth, i) = argmax_f32 possible_depths
-          in if (f32.>) best_depth buffer[by][bx].1
-             then buffer with [by][bx] = (plot possible_pfs[i], best_depth)
-             else buffer
-    in {buffer = buffer', bbox}
+      zip tile.buffer (indices tile.buffer)
+      |> map (\(row, dy) ->
+                zip row (indices row)
+                |> map (\((prev_target, prev_depth), dx) ->
+                          let p' = (vec2fp.+) p (vec2fp.from_tuple (fixedpoint.i64 dx, fixedpoint.i64 dy))
+                          in best_pixel_at plot {prev_target, prev_depth} p' tris))
+    in {buffer = buffer', bbox = tile.bbox}
 
   def calc_triangle_info (tri: triangle_t) : triangle_info_t =
     let tri_fp = conv_to_triangle_fp tri
@@ -227,6 +232,6 @@ module mk_rasterizer (Config: ConfigSpec) (Varying: VaryingSpec) (Framebuffer: F
                 (tris: []triangle Varying.t)
                 (fb: Framebuffer.t) : Framebuffer.t =
     let tris = map calc_triangle_info tris
-    let tiles' = map (map (\tile -> rasterize_tile plot (copy tile) tris)) (Framebuffer.get_tiles fb)
+    let tiles' = map (map (\tile -> rasterize_tile plot tile tris)) (Framebuffer.get_tiles fb)
     in Framebuffer.set_tiles fb tiles'
 }

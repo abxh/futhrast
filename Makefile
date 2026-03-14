@@ -5,8 +5,11 @@ BUILD_DIR := build
 
 export PROGNAME
 
-CFLAGS ?= -std=gnu11 -O -Wall -Wextra -pedantic
-CXXFLAGS ?= -std=c++17 -O -Wall -Wextra -pedantic
+CFLAGS ?= -std=gnu11 -Wall -Wextra -pedantic
+CXXFLAGS ?= -std=c++17 -Wall -Wextra -pedantic
+
+CFLAGS += -O3 -march=native -flto=auto -ffast-math
+CXXFLAGS += -O3 -march=native -flto=auto -ffast-math
 
 # enable ubsan sanitizer. may comment below chunk out.
 # CFLAGS += -fsanitize=undefined
@@ -15,7 +18,7 @@ CXXFLAGS ?= -std=c++17 -O -Wall -Wextra -pedantic
 
 export CFLAGS CXXFLAGS LDFLAGS
 
-LYS_BACKEND := c
+LYS_BACKEND := multicore
 
 export LYS_BACKEND
 

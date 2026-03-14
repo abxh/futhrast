@@ -37,7 +37,7 @@ module type FramebufferSpec = {
   -- | get target buffer
   val get_target_buffer : t -> *[][]target
 
-  -- | get depth buffer with [0;1] corresponding to [far;near] and (f32.lowest) for undefined.
+  -- | get depth buffer with [0;1] corresponding to [far;near] and (-1) as neutral element.
   val get_depth_buffer : t -> *[][]f32
 
   -- | read tiles
@@ -69,7 +69,7 @@ module Framebuffer (Config: ConfigSpec) (Target: {type t})
     let tiles_h = (h + (tile_size - 1)) / tile_size
     let tiles_f =
       (\y x ->
-         { buffer = replicate tile_size (replicate tile_size (target_default, f32.lowest))
+         { buffer = replicate tile_size (replicate tile_size (target_default, -1))
          , bbox =
              { xmin = tile_size * x
              , ymin = tile_size * y
