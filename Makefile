@@ -15,7 +15,7 @@ CXXFLAGS ?= -std=c++17 -O -Wall -Wextra -pedantic
 
 export CFLAGS CXXFLAGS LDFLAGS
 
-LYS_BACKEND := opencl
+LYS_BACKEND := c
 
 export LYS_BACKEND
 

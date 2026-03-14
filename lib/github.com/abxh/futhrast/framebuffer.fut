@@ -10,8 +10,7 @@ type aabb2D 'a =
 
 -- | tile type
 type tile [tile_size] 'target =
-  { target: [tile_size][tile_size]target
-  , depth: [tile_size][tile_size]f32
+  { buffer: [tile_size][tile_size](target, f32)
   , bbox: aabb2D i64
   }
 
@@ -38,7 +37,7 @@ module type FramebufferSpec = {
   -- | get target buffer
   val get_target_buffer : t -> *[][]target
 
-  -- | get depth buffer with [0;1] corresponding to [far;near] and (-f32.inf) for undefined.
+  -- | get depth buffer with [0;1] corresponding to [far;near] and (f32.lowest) for undefined.
   val get_depth_buffer : t -> *[][]f32
 
   -- | read tiles
@@ -70,8 +69,7 @@ module Framebuffer (Config: ConfigSpec) (Target: {type t})
     let tiles_h = (h + (tile_size - 1)) / tile_size
     let tiles_f =
       (\y x ->
-         { target = replicate tile_size (replicate tile_size (target_default))
-         , depth = replicate tile_size (replicate tile_size (-f32.inf))
+         { buffer = replicate tile_size (replicate tile_size (target_default, f32.lowest))
          , bbox =
              { xmin = tile_size * x
              , ymin = tile_size * y
@@ -97,7 +95,7 @@ module Framebuffer (Config: ConfigSpec) (Target: {type t})
                    let ux = x / tile_size
                    let ly = y % tile_size
                    let lx = x % tile_size
-                   in fb.tiles[uy, ux].target[ly, lx])
+                   in fb.tiles[uy, ux].buffer[ly, lx].0)
 
   def get_depth_buffer (fb: t) : *[][]f32 =
     tabulate_2d fb.h
@@ -107,7 +105,7 @@ module Framebuffer (Config: ConfigSpec) (Target: {type t})
                    let ux = x / tile_size
                    let ly = y % tile_size
                    let lx = x % tile_size
-                   in fb.tiles[uy, ux].depth[ly, lx])
+                   in fb.tiles[uy, ux].buffer[ly, lx].1)
 
   def get_tiles (fb: t) = fb.tiles
 

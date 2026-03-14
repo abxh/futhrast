@@ -78,7 +78,7 @@ module derive_fragment_ops (Varying: VaryingSpec)
     {pos = {x = 0f32, y = 0f32, z = 0f32, w = 1f32}, attr = Varying.zero}
 
   def zero_pfragment =
-    {pos = {x = 0f32, y = 0f32}, depth = -f32.inf, Z_inv = 1f32, attr = Varying.zero}
+    {pos = {x = 0f32, y = 0f32}, depth = f32.lowest, Z_inv = 1f32, attr = Varying.zero}
 
   def proj ({pos = {x, y, z, w}, attr}: fragment) : pfragment =
     let Z_inv = 1 / w
