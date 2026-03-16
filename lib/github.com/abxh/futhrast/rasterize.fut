@@ -254,19 +254,20 @@ module mk_rasterizer (Varying: VaryingSpec) (FB: FramebufferSpec) = {
                        (plot: plot_t)
                        (tris: [k * Config.tri_block_size + r]triangle_info_t)
                        (tiles: []tile_t) : []tile_t =
-    let (blocks, rest) = split tris
+    let (tri_blocks, tri_rest) = split tris
     let tiles' =
       tiles
       |> map (\tile ->
-                blocks
-                |> unflatten
-                |> map (\tri_block ->
-                          bitset.init (length tri_block) (\i -> calc_tile_tri_mask tile.bbox tri_block[i])
-                          |> bitset.to_array
-                          |> map (\i -> tri_block[i])
-                          |> rasterize_fine plot tile)
-                |> reduce FB.merge_tiles (FB.default_tile tile.bbox)
-                |> FB.merge_tiles (rasterize_fine plot tile rest))
+                let f tri_block =
+                  bitset.init (length tri_block) (\i -> calc_tile_tri_mask tile.bbox tri_block[i])
+                  |> bitset.to_array
+                  |> map (\i -> tri_block[i])
+                  |> rasterize_fine plot tile
+                in tri_blocks
+                   |> unflatten
+                   |> map f
+                   |> reduce FB.merge_tiles (FB.default_tile tile.bbox)
+                   |> FB.merge_tiles (f tri_rest))
     in tiles'
 
   def rasterize [n]

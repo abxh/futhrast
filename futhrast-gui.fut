@@ -89,31 +89,15 @@ module lys : lys with text_content = lys_text_content.text_content = {
         , attr = f.colour
         }
     let ts =
-      [ ( { pos = (0, 0)
-          , colour = argb.green
-          , order = 1
-          }
-        , { pos =
-              ( (s.w - 1) / 2 + i64.f32 (f32.i64 (s.w - 1) / 2 * t)
-              , (s.h - 1) / 2 + i64.f32 (f32.i64 (s.h - 1) / 2 * t)
-              )
-          , colour = argb.blue
-          , order = 1
-          }
-        , { pos = (0, (s.h - 1) / 2 + i64.f32 (f32.i64 (s.h - 1) / 2 * t))
-          , colour = argb.red
-          , order = 1
-          }
-        )
-      , ( { pos = ((s.w - 1) / 2, s.h - 1)
+      [ ( { pos = ((s.w - 1) / 2, (s.h - 1) / 2)
           , colour = argb.blue
           , order = 0
           }
-        , { pos = (s.w - 1, (s.h - 1) / 2)
+        , { pos = ((s.w - 1) / 2 - 10, (s.h - 1) / 2)
           , colour = argb.orange
           , order = 0
           }
-        , { pos = (s.w - 1, s.h - 1)
+        , { pos =((s.w - 1) / 2, (s.h - 1) / 2 - 10) 
           , colour = argb.magenta
           , order = 0
           }
