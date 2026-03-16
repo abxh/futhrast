@@ -57,10 +57,10 @@ module bitset (M: integral) (S: {val max_bits : i64}) : bitset_spec = {
 
   def is_lsb : bool = M.ctz (M.i32 1) == 0
 
-  def set_bit_positions (word: M.t) : *[word_size]i64 =
+  def set_bit_positions (word: M.t): *[word_size]i64 =
     let (_, res) =
-      loop (w, res) = (word, replicate word_size 0i64)
-      for i in 0..<word_size do
+      loop (w, res) = (word, replicate word_size (-1i64))
+      for i in 0..<M.popc word do
         let pos = if is_lsb then M.ctz w else M.clz w
         let mask = (M.<<) (M.i32 1) (M.i32 pos)
         in ((M.&) w (M.not mask), res with [i] = i64.i32 pos)
