@@ -5,22 +5,27 @@ BUILD_DIR := build
 
 export PROGNAME
 
+NOWARN_CFLAGS ?= -std=gnu11
 CFLAGS ?= -std=gnu11 -Wall -Wextra -pedantic
 CXXFLAGS ?= -std=c++17 -Wall -Wextra -pedantic
 
-CFLAGS += -O3 -march=native -flto=auto -ffast-math
-CXXFLAGS += -O3 -march=native -flto=auto -ffast-math
+NOWARN_CFLAGS ?= -O
+CFLAGS += -O
+CXXFLAGS += -O
+
+# enable optimisations for c/multicore.
+# NOWARN_CFLAGS += -O3 -march=native -flto=auto -ffast-math
+# CFLAGS += -O3 -march=native -flto=auto -ffast-math
+# CXXFLAGS += -O3 -march=native -flto=auto -ffast-math
 
 # enable ubsan sanitizer. may comment below chunk out.
 # CFLAGS += -fsanitize=undefined
 # CXXFLAGS += -fsanitize=undefined
 # LDFLAGS += -fsanitize=undefined
 
-export CFLAGS CXXFLAGS LDFLAGS
+LYS_BACKEND := opencl
 
-LYS_BACKEND := multicore
-
-export LYS_BACKEND
+export NOWARN_CFLAGS CFLAGS CXXFLAGS LDFLAGS LYS_BACKEND
 
 ll: run
 

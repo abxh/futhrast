@@ -1,12 +1,11 @@
 import "../../diku-dk/segmented/segmented"
-import "../../diku-dk/containers/bitset"
-import "../../diku-dk/sorts/radix_sort"
 
 import "math/vec"
 import "math/fixedpoint"
 import "framebuffer"
 import "config"
 import "fragment"
+import "utils/bitset"
 
 type triangle 'varying =
   ( pfragment varying
@@ -121,14 +120,16 @@ module wcoeffs_fp = {
   -- | check if inside the triangle, given w coefficients
   def is_inside_triangle {x = w0: fixedpoint.t, y = w1: fixedpoint.t, z = w2: fixedpoint.t} : bool =
     w0 >= fixedpoint.zero && w1 >= fixedpoint.zero && w2 >= fixedpoint.zero
+
+  -- | check if outside the triangle, given w coefficients
+  def is_outside_triangle {x = w0: fixedpoint.t, y = w1: fixedpoint.t, z = w2: fixedpoint.t} : bool =
+    w0 < fixedpoint.zero && w1 < fixedpoint.zero && w2 < fixedpoint.zero
 }
 
-module mk_rasterizer (Config: ConfigSpec) (Varying: VaryingSpec) (Framebuffer: FramebufferSpec) = {
+module mk_rasterizer (Varying: VaryingSpec) (FB: FramebufferSpec) = {
   local module Fragment = derive_fragment_ops Varying
+  local module Config = FB.Config
 
-  type^ plot_t = Fragment.pfragment -> Framebuffer.target
-
-  local open Config
   local open wcoeffs_fp
   local open wcoeffs_vec2fp
   local open tri_functions
@@ -146,63 +147,37 @@ module mk_rasterizer (Config: ConfigSpec) (Varying: VaryingSpec) (Framebuffer: F
 
   local
   type triangle_info_t =
-    { tri: triangle_t
-    , tri_fp: triangle_fp_t
+    { verts: triangle_t
+    , verts_fp: triangle_fp_t
     , bbox: bbox2D i64
     , inv_area_2: f32
     , w_min: vec3fp.t
-    , w_min_w_bias: vec3fp.t
     , w_delta: (vec3fp.t, vec3fp.t)
     , w_bias: vec3fp.t
     }
 
-  local type tile_t = tile [Framebuffer.tile_size] Framebuffer.target
+  local type tile_t = tile [FB.tile_size] FB.target
 
-  def tri_pixel_at ({x, y}: vec2fp.t) (tri: triangle_info_t) =
-    let w =
-      (vec3fp.+) ((vec3fp.*) x tri.w_delta.0) ((vec3fp.*) y tri.w_delta.1)
-      |> (vec3fp.+) tri.w_min_w_bias
-    in if is_inside_triangle w
-       then let weight0 = tri.inv_area_2 * fixedpoint.to_f32 w.x
-            let weight1 = tri.inv_area_2 * fixedpoint.to_f32 w.y
-            let weight2 = 1 - (weight0 + weight1)
-            let pf = (Fragment.barycentric) tri.tri (weight0, weight1, weight2)
-            in (pf, pf.depth)
-       else (Fragment.zero_pfragment, Fragment.zero_pfragment.depth)
+  type^ plot_t = Fragment.pfragment -> FB.target
 
-  def argmax_non_negative_f32 [n] (xs: []f32) : (f32, i64) =
-    reduce_comm (\(vx, ix) (vy, iy) ->
-                   if vx > vy || (vx == vy && ix < iy)
-                   then (vx, ix)
-                   else (vy, iy))
-                (-1, n)
-                (zip xs (iota n))
+  module tri_mask = {
+    local open fixedpoint
 
-  def best_pixel_at (plot: plot_t) {prev_target, prev_depth} (p: vec2fp.t) (tris: []triangle_info_t) =
-    let (possible_pfs, possible_depths) = tris |> map (tri_pixel_at p) |> unzip
-    let (best_depth, i) = argmax_non_negative_f32 possible_depths
-    in if (f32.>) best_depth prev_depth
-       then (plot possible_pfs[i], best_depth)
-       else (prev_target, prev_depth)
+    def calc_tile_tri_mask (tile_bbox: bbox2D i64) (tri: triangle_info_t) =
+      let tri_pos = get_triangle_fp_pos tri.verts_fp
+      let w0 = calc_wcoeffs tri_pos {x = fixedpoint.i64 tile_bbox.xmin, y = fixedpoint.i64 tile_bbox.ymin}
+      let w1 = calc_wcoeffs tri_pos {x = fixedpoint.i64 tile_bbox.xmin, y = fixedpoint.i64 tile_bbox.ymax}
+      let w2 = calc_wcoeffs tri_pos {x = fixedpoint.i64 tile_bbox.xmax, y = fixedpoint.i64 tile_bbox.ymin}
+      let w3 = calc_wcoeffs tri_pos {x = fixedpoint.i64 tile_bbox.xmax, y = fixedpoint.i64 tile_bbox.ymax}
+      let is_outside proj = proj w0 < zero && proj w1 < zero && proj w2 < zero && proj w3 < zero
+      in !(is_outside (.x) || is_outside (.y) || is_outside (.z))
+  }
 
-  def rasterize_tile (plot: plot_t)
-                     (tile: tile_t)
-                     (tris: []triangle_info_t) : tile_t =
-    let px = (fixedpoint.+) (fixedpoint.i64 (tile.bbox.xmin)) (fixedpoint.f32 0.5)
-    let py = (fixedpoint.+) (fixedpoint.i64 (tile.bbox.ymin)) (fixedpoint.f32 0.5)
-    let p = vec2fp.from_tuple (px, py)
-    let buffer' =
-      zip tile.buffer (indices tile.buffer)
-      |> map (\(row, dy) ->
-                zip row (indices row)
-                |> map (\((prev_target, prev_depth), dx) ->
-                          let p' = (vec2fp.+) p (vec2fp.from_tuple (fixedpoint.i64 dx, fixedpoint.i64 dy))
-                          in best_pixel_at plot {prev_target, prev_depth} p' tris))
-    in {buffer = buffer', bbox = tile.bbox}
+  open tri_mask
 
   def calc_triangle_info (tri: triangle_t) : triangle_info_t =
-    let tri_fp = conv_to_triangle_fp tri
-    let tup = get_triangle_fp_pos tri_fp
+    let verts_fp = conv_to_triangle_fp tri
+    let tup = get_triangle_fp_pos verts_fp
     let inv_area_2 = calc_tri_area_2 tup |> fixedpoint.to_f32 |> (\x -> (f32./) 1 x)
     let w_bias = calc_triangle_edge_bias tup
     let w_delta = calc_delta tup
@@ -212,26 +187,95 @@ module mk_rasterizer (Config: ConfigSpec) (Varying: VaryingSpec) (Framebuffer: F
     let ymin = p0.y `fixedpoint.min` p1.y `fixedpoint.min` p2.y
     let ymax = p0.y `fixedpoint.max` p1.y `fixedpoint.max` p2.y
     let w_min = calc_wcoeffs tup {x = fixedpoint.i32 0, y = fixedpoint.i32 0}
-    let w_min_w_bias = (vec3fp.+) w_min w_bias
     in { bbox =
            { xmin = fixedpoint.to_i64 xmin
            , xmax = fixedpoint.to_i64 xmax
            , ymin = fixedpoint.to_i64 ymin
            , ymax = fixedpoint.to_i64 ymax
            }
-       , tri
-       , tri_fp
+       , verts = tri
+       , verts_fp
        , inv_area_2
        , w_min
-       , w_min_w_bias
        , w_delta
        , w_bias
        }
 
-  def rasterize (plot: plot_t)
-                (tris: []triangle Varying.t)
-                (fb: Framebuffer.t) : Framebuffer.t =
-    let tris = map calc_triangle_info tris
-    let tiles' = map (map (\tile -> rasterize_tile plot tile tris)) (Framebuffer.get_tiles fb)
-    in Framebuffer.set_tiles fb tiles'
+  def tri_pixel_at ({x, y}: vec2fp.t) (tri: triangle_info_t) =
+    let w =
+      (vec3fp.+) ((vec3fp.*) x tri.w_delta.0) ((vec3fp.*) y tri.w_delta.1)
+      |> (vec3fp.+) tri.w_min
+      |> (vec3fp.+) tri.w_bias
+    in if is_inside_triangle w
+       then let weight0 = tri.inv_area_2 * fixedpoint.to_f32 w.x
+            let weight1 = tri.inv_area_2 * fixedpoint.to_f32 w.y
+            let weight2 = 1 - (weight0 + weight1)
+            in (Fragment.barycentric) tri.verts (weight0, weight1, weight2)
+       else Fragment.zero_pfragment
+
+  def argmax_non_negative_f32 [n] (xs: []f32) : (f32, i64) =
+    reduce_comm (\(vx, ix) (vy, iy) ->
+                   if vx > vy || (vx == vy && ix < iy)
+                   then (vx, ix)
+                   else (vy, iy))
+                (-1, n)
+                (zip xs (iota n))
+
+  def best_pixel_at (plot: plot_t) (prev_target, prev_depth) (p: vec2fp.t) (tris: []triangle_info_t) =
+    let (fs, possible_depths) =
+      tris
+      |> map (tri_pixel_at p)
+      |> map (\f -> (f, f.depth))
+      |> unzip
+    let (best_depth, i) = argmax_non_negative_f32 possible_depths
+    in if (f32.>) best_depth prev_depth
+       then (plot fs[i], best_depth)
+       else (prev_target, prev_depth)
+
+  def rasterize_fine (plot: plot_t)
+                     (tris: []triangle_info_t)
+                     (tile: tile_t) : tile_t =
+    let p =
+      (vec2fp.+) {x = fixedpoint.i64 tile.bbox.xmin, y = fixedpoint.i64 tile.bbox.ymin}
+                 {x = fixedpoint.f32 0.5, y = fixedpoint.f32 0.5}
+    let buffer' =
+      zip tile.buffer (indices tile.buffer)
+      |> map (\(prev, i: i64) ->
+                let dy = i / Config.tile_size
+                let dx = i % Config.tile_size
+                let offset = {x = fixedpoint.i64 dx, y = fixedpoint.i64 dy}
+                in best_pixel_at plot prev ((vec2fp.+) p offset) tris)
+    in tile with buffer = buffer'
+
+  local module bitset_u32 = bitset u32 {def max_bits = Config.tri_block_size}
+
+  def calc_tile_masks_f (tile: tile_t) (tris: []triangle_info_t) =
+    bitset_u32.init (length tris)
+                    (\i -> calc_tile_tri_mask tile.bbox tris[i])
+
+  def rasterize_coarse [k] [r]
+                       (plot: plot_t)
+                       (tris: [k * Config.tri_block_size + r]triangle_info_t)
+                       (tiles: []tile_t) : []tile_t =
+    let (blocks, rest) = split tris
+    let tiles' =
+      tiles
+      |> map (\tile ->
+                let f tri_block: tile_t = rasterize_fine plot tri_block tile
+                in blocks
+                   |> unflatten
+                   |> map f
+                   |> reduce FB.merge_tiles (FB.default_tile tile.bbox)
+                   |> FB.merge_tiles (f rest))
+    in tiles'
+
+  def rasterize [n]
+                (plot: plot_t)
+                (tris: [n]triangle Varying.t)
+                (fb: FB.t) : FB.t =
+    let n_blocks = n / Config.tri_block_size
+    let rest = n % Config.tri_block_size
+    let tris = map calc_triangle_info tris |> sized (n_blocks * Config.tri_block_size + rest)
+    let tiles' = rasterize_coarse plot tris <| FB.tiles fb
+    in FB.set_tiles fb tiles'
 }

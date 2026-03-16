@@ -61,12 +61,20 @@ module lys : lys with text_content = lys_text_content.text_content = {
 
   local
   module Config = {
-    def tile_size : i64 = 8
-    def triangle_winding_order : #clockwise | #counterclockwise | #neither = #neither
+                    def tile_size : i64 = 8
+                    def tri_block_size : i64 = 256
+                    def triangle_winding_order : #clockwise | #counterclockwise | #neither = #neither
+                  }:
+                  ConfigSpec
+
+  local
+  module Target = {
+    type t = argb.colour
+    def dummy = argb.black
   }
 
-  local module Framebuffer = Framebuffer Config {type t = argb.colour}
-  local module Rasterizer = mk_rasterizer Config Varying Framebuffer
+  local module Framebuffer = Framebuffer Config Target
+  local module Rasterizer = mk_rasterizer Varying Framebuffer
 
   def render (s: state) : [][]argb.colour =
     let t = f32.abs (f32.sin s.time * f32.sin s.time)
@@ -114,7 +122,7 @@ module lys : lys with text_content = lys_text_content.text_content = {
       |> map (\(v0, v1, v2) -> (f v0, f v1, f v2))
     in Framebuffer.init {w = s.w, h = s.h} argb.black
        |> Rasterizer.rasterize (\v -> v.attr) ts
-       |> Framebuffer.get_target_buffer
+       |> Framebuffer.target_buf
 }
 
 -- {v0=(0,s.h-1), v1=(s.w-1,0), v2=(s.w-1,s.h-1)},

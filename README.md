@@ -6,7 +6,7 @@ To build the demo, simply run:
 
 ```bash
 futhark pkg sync
-make
+make -j $(nproc)
 cd build
 ./futhrast-gui
 ```
