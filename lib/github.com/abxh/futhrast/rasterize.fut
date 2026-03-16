@@ -160,6 +160,7 @@ module mk_rasterizer (Varying: VaryingSpec) (FB: FramebufferSpec) = {
 
   type^ plot_t = Fragment.pfragment -> FB.target
 
+  local
   module tri_mask = {
     local open fixedpoint
 
@@ -173,7 +174,7 @@ module mk_rasterizer (Varying: VaryingSpec) (FB: FramebufferSpec) = {
       in !(is_outside (.x) || is_outside (.y) || is_outside (.z))
   }
 
-  open tri_mask
+  local open tri_mask
 
   def calc_triangle_info (tri: triangle_t) : triangle_info_t =
     let verts_fp = conv_to_triangle_fp tri
@@ -233,8 +234,8 @@ module mk_rasterizer (Varying: VaryingSpec) (FB: FramebufferSpec) = {
        else (prev_target, prev_depth)
 
   def rasterize_fine (plot: plot_t)
-                     (tris: []triangle_info_t)
-                     (tile: tile_t) : tile_t =
+                     (tile: tile_t)
+                     (tris: []triangle_info_t) : tile_t =
     let p =
       (vec2fp.+) {x = fixedpoint.i64 tile.bbox.xmin, y = fixedpoint.i64 tile.bbox.ymin}
                  {x = fixedpoint.f32 0.5, y = fixedpoint.f32 0.5}
@@ -247,11 +248,7 @@ module mk_rasterizer (Varying: VaryingSpec) (FB: FramebufferSpec) = {
                 in best_pixel_at plot prev ((vec2fp.+) p offset) tris)
     in tile with buffer = buffer'
 
-  local module bitset_u32 = bitset u32 {def max_bits = Config.tri_block_size}
-
-  def calc_tile_masks_f (tile: tile_t) (tris: []triangle_info_t) =
-    bitset_u32.init (length tris)
-                    (\i -> calc_tile_tri_mask tile.bbox tris[i])
+  local module bitset = bitset u16 {def max_bits = Config.tri_block_size}
 
   def rasterize_coarse [k] [r]
                        (plot: plot_t)
@@ -261,12 +258,15 @@ module mk_rasterizer (Varying: VaryingSpec) (FB: FramebufferSpec) = {
     let tiles' =
       tiles
       |> map (\tile ->
-                let f tri_block: tile_t = rasterize_fine plot tri_block tile
-                in blocks
-                   |> unflatten
-                   |> map f
-                   |> reduce FB.merge_tiles (FB.default_tile tile.bbox)
-                   |> FB.merge_tiles (f rest))
+                blocks
+                |> unflatten
+                |> map (\tri_block ->
+                          bitset.init (length tri_block) (\i -> calc_tile_tri_mask tile.bbox tri_block[i])
+                          |> bitset.to_array
+                          |> map (\i -> tri_block[i])
+                          |> rasterize_fine plot tile)
+                |> reduce FB.merge_tiles (FB.default_tile tile.bbox)
+                |> FB.merge_tiles (rasterize_fine plot tile rest))
     in tiles'
 
   def rasterize [n]
