@@ -273,13 +273,11 @@ module mk_rasterizer (Varying: VaryingSpec) (FB: FramebufferSpec) = {
                     (tris: [m]triangle_info_t)
                     (bins: [n]tile_bin_t) : []tile_bin_t =
     let bins' =
-      let bins' = copy bins
-      in loop (bins')
-         for i in 0..<n do
-           let tris' = iota m |> filter (\j -> calc_tri_mask bins[i].bbox tris[j]) |> map (\j -> tris[j])
-           in bins' with [i] = { tiles = rasterize_coarse plot tris' bins[i].tiles
-                               , bbox = bins[i].bbox
-                               }
+      loop (bins') = copy bins
+      for i in 0..<n do
+        let bin = bins[i]
+        let tris' = iota m |> filter (\j -> calc_tri_mask bin.bbox tris[j]) |> map (\j -> tris[j])
+        in bins' with [i] = (bin with tiles = rasterize_coarse plot tris' bin.tiles)
     in bins'
 
   def rasterize (plot: plot_t)
