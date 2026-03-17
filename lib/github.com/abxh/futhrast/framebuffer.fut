@@ -14,6 +14,12 @@ type tile [tile_size] 'target =
   , bbox: aabb2D i64
   }
 
+-- | tile bin type
+type tile_bin [tile_bin_size] [tile_size] 'target =
+  { tiles: [tile_bin_size * tile_bin_size](tile [tile_size] target)
+  , bbox: aabb2D i64
+  }
+
 -- | Tiled framebuffer specification
 module type FramebufferSpec = {
   -- config module
@@ -25,9 +31,6 @@ module type FramebufferSpec = {
   -- | the target type
   type target
 
-  -- | the tile size
-  val tile_size : i64
-
   -- | initialize a new framebuffer
   val init : {h: i64, w: i64} -> target -> t
 
@@ -37,11 +40,11 @@ module type FramebufferSpec = {
   -- | retrieve height
   val h : t -> i64
 
-  -- | retrieve number of tiles in horizontal direction
-  val tiles_w : t -> i64
+  -- | retrieve number of tile bins in horizontal direction
+  val bins_w : t -> i64
 
-  -- | retrieve number of tiles in vertical direction
-  val tiles_h : t -> i64
+  -- | retrieve number of tile bins in vertical direction
+  val bins_h : t -> i64
 
   -- | get target buffer
   val target_buf : (fb: t) -> *[h fb][w fb]target
@@ -49,115 +52,106 @@ module type FramebufferSpec = {
   -- | get depth buffer with [0;1] corresponding to [far;near] and (-1) as neutral element.
   val depth_buf : (fb: t) -> *[h fb][w fb]f32
 
-  -- | read tiles
-  val tiles : (fb: t) -> [tiles_h fb * tiles_w fb](tile [tile_size] target)
+  -- | read tile bins
+  val get_bins : (fb: t) -> [bins_h fb * bins_w fb](tile_bin [Config.tile_bin_size] [Config.tile_size] target)
 
-  -- | default tile, such that merging it with any other tile with result in the other tile
-  val default_tile : aabb2D i64 -> tile [tile_size] target
-
-  -- | non-commutative tile merging operation
-  val merge_tiles : tile [tile_size] target -> tile [tile_size] target -> tile [tile_size] target
-
-  -- | commutative tile merging operation
-  val merge_tiles_comm : (tile [tile_size] target, i64) -> (tile [tile_size] target, i64) -> (tile [tile_size] target, i64)
-
-  -- | write tiles
-  val set_tiles : (fb: t) -> [tiles_h fb * tiles_w fb](tile [tile_size] target) -> t
-}
-
-module type TargetSpec = {
-  type t
-  val dummy : t
+  -- | write tile bins
+  val set_bins : (fb: t) -> [bins_h fb * bins_w fb](tile_bin [Config.tile_bin_size] [Config.tile_size] target) -> t
 }
 
 -- | Tiled framebuffer implementation
-module Framebuffer (Config: ConfigSpec) (Target: TargetSpec)
+module Framebuffer (Config: ConfigSpec) (Target: {type t})
   : FramebufferSpec
     with target = Target.t = {
   module Config = Config
 
   type target = Target.t
 
-  def tile_size = Config.tile_size
-
   type~ t =
     { w: i64
     , h: i64
-    , tiles_w: i64
-    , tiles_h: i64
-    , tiles: [](tile [tile_size] target)
+    , bins_w: i64
+    , bins_h: i64
+    , bins: [](tile_bin [Config.tile_bin_size] [Config.tile_size] target)
     }
 
   def init {w = w: i64, h = h: i64} (target_default: Target.t) : t =
-    let tiles_w = (w + (tile_size - 1)) / tile_size
-    let tiles_h = (h + (tile_size - 1)) / tile_size
+    let bin_extent = Config.tile_size * Config.tile_bin_size
+    let total_tiles_w = (w + (Config.tile_size - 1)) / Config.tile_size
+    let total_tiles_h = (h + (Config.tile_size - 1)) / Config.tile_size
+    let bins_w = (total_tiles_w + (Config.tile_bin_size - 1)) / Config.tile_bin_size
+    let bins_h = (total_tiles_h + (Config.tile_bin_size - 1)) / Config.tile_bin_size
     let mk_tile (ty: i64) (tx: i64) =
-      { buffer = replicate tile_size (replicate tile_size (target_default, -1f32)) |> flatten
+      { buffer = replicate Config.tile_size (replicate Config.tile_size (target_default, -1f32)) |> flatten
       , bbox =
-          { xmin = tile_size * tx
-          , ymin = tile_size * ty
-          , xmax = tile_size * (tx + 1) `i64.min` w
-          , ymax = tile_size * (ty + 1) `i64.min` h
+          { xmin = Config.tile_size * tx
+          , ymin = Config.tile_size * ty
+          , xmax = Config.tile_size * (tx + 1) `i64.min` w
+          , ymax = Config.tile_size * (ty + 1) `i64.min` h
+          }
+      }
+    let mk_bin (by: i64) (bx: i64) =
+      { tiles =
+          tabulate_2d Config.tile_bin_size
+                      Config.tile_bin_size
+                      (\y x ->
+                         let ty = by * Config.tile_bin_size + y
+                         let tx = bx * Config.tile_bin_size + x
+                         in mk_tile ty tx)
+          |> flatten
+      , bbox =
+          { xmin = bin_extent * bx
+          , ymin = bin_extent * by
+          , xmax = bin_extent * (bx + 1) `i64.min` w
+          , ymax = bin_extent * (by + 1) `i64.min` h
           }
       }
     in { w
        , h
-       , tiles_w
-       , tiles_h
-       , tiles = tabulate_2d tiles_h tiles_w mk_tile |> flatten
+       , bins_w
+       , bins_h
+       , bins = tabulate_2d bins_h bins_w mk_bin |> flatten
        }
 
   def w (fb: t) = fb.w
   def h (fb: t) = fb.h
-  def tiles_w (fb: t) = fb.tiles_w
-  def tiles_h (fb: t) = fb.tiles_h
+
+  def bins_w (fb: t) = fb.bins_w
+  def bins_h (fb: t) = fb.bins_h
 
   def target_buf (fb: t) : *[h fb][w fb]target =
     tabulate_2d (h fb)
                 (w fb)
                 (\y x ->
-                   let ty = y / tile_size
-                   let tx = x / tile_size
-                   let py = y % tile_size
-                   let px = x % tile_size
-                   in fb.tiles[ty * fb.tiles_w + tx].buffer[py * tile_size + px].0)
+                   let bin_extent = Config.tile_size * Config.tile_bin_size
+                   let by = y / bin_extent
+                   let bx = x / bin_extent
+                   let iy = y % bin_extent
+                   let ix = x % bin_extent
+                   let ty = iy / Config.tile_size
+                   let tx = ix / Config.tile_size
+                   let py = iy % Config.tile_size
+                   let px = ix % Config.tile_size
+                   in fb.bins[by * fb.bins_w + bx].tiles[ty * Config.tile_bin_size + tx].buffer[py * Config.tile_size + px].0)
 
   def depth_buf (fb: t) : *[h fb][w fb]f32 =
     tabulate_2d (h fb)
                 (w fb)
                 (\y x ->
-                   let ty = y / tile_size
-                   let tx = x / tile_size
-                   let py = y % tile_size
-                   let px = x % tile_size
-                   in fb.tiles[ty * fb.tiles_w + tx].buffer[py * tile_size + px].1)
+                   let bin_extent = Config.tile_size * Config.tile_bin_size
+                   let by = y / bin_extent
+                   let bx = x / bin_extent
+                   let iy = y % bin_extent
+                   let ix = x % bin_extent
+                   let ty = iy / Config.tile_size
+                   let tx = ix / Config.tile_size
+                   let py = iy % Config.tile_size
+                   let px = ix % Config.tile_size
+                   in fb.bins[by * fb.bins_w + bx].tiles[ty * Config.tile_bin_size + tx].buffer[py * Config.tile_size + px].1)
 
-  def tiles (fb: t) = fb.tiles |> sized (tiles_h fb * tiles_w fb)
+  def get_bins (fb: t) = fb.bins |> sized (bins_h fb * bins_w fb)
 
-  def default_tile (bbox: aabb2D i64) : tile [tile_size] target =
-    { buffer = replicate tile_size (replicate tile_size (Target.dummy, -1f32)) |> flatten
-    , bbox
-    }
-
-  def merge_tiles (t0: tile [tile_size] target) (t1: tile [tile_size] target) : tile [tile_size] target =
-    let merge_pixel (a: (target, f32)) (b: (target, f32)): (target, f32) =
-      if b.1 > a.1
-      then b
-      else a
-    in { buffer = map2 merge_pixel t0.buffer t1.buffer
-       , bbox = t1.bbox
-       }
-
-  def merge_tiles_comm (t0: tile [tile_size] target, i0: i64) (t1: tile [tile_size] target, i1: i64) : (tile [tile_size] target, i64) =
-    let merge_pixel (a: (target, f32)) (b: (target, f32)): (target, f32) =
-      if a.1 > b.1 || (a.1 == b.1 && (i0 > i1))
-      then a
-      else b
-    in ( { buffer = map2 merge_pixel t0.buffer t1.buffer
-         , bbox = t1.bbox
-         }
-       , i0 `i64.max` i1
-       )
-
-  def set_tiles (fb: t) (tiles: [tiles_h fb * tiles_w fb](tile [tile_size] target)) : t = fb with tiles = tiles
+  def set_bins (fb: t)
+               (bins: [bins_h fb * bins_w fb](tile_bin [Config.tile_bin_size] [Config.tile_size] target)) : t =
+    fb with bins = bins
 }
