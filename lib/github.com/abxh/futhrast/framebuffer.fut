@@ -58,6 +58,9 @@ module type FramebufferSpec = {
   -- | non-commutative tile merging operation
   val merge_tiles : tile [tile_size] target -> tile [tile_size] target -> tile [tile_size] target
 
+  -- | commutative tile merging operation
+  val merge_tiles_comm : (tile [tile_size] target, i64) -> (tile [tile_size] target, i64) -> (tile [tile_size] target, i64)
+
   -- | write tiles
   val set_tiles : (fb: t) -> [tiles_h fb * tiles_w fb](tile [tile_size] target) -> t
 }
@@ -144,6 +147,17 @@ module Framebuffer (Config: ConfigSpec) (Target: TargetSpec)
     in { buffer = map2 merge_pixel t0.buffer t1.buffer
        , bbox = t1.bbox
        }
+
+  def merge_tiles_comm (t0: tile [tile_size] target, i0: i64) (t1: tile [tile_size] target, i1: i64) : (tile [tile_size] target, i64) =
+    let merge_pixel (a: (target, f32)) (b: (target, f32)): (target, f32) =
+      if a.1 > b.1 || (a.1 == b.1 && (i0 > i1))
+      then a
+      else b
+    in ( { buffer = map2 merge_pixel t0.buffer t1.buffer
+         , bbox = t1.bbox
+         }
+       , i0 `i64.max` i1
+       )
 
   def set_tiles (fb: t) (tiles: [tiles_h fb * tiles_w fb](tile [tile_size] target)) : t = fb with tiles = tiles
 }

@@ -33,6 +33,12 @@ module tri_functions = {
     let f = \v -> {pos = (vec2fp.map) fixedpoint.to_f32 v.pos, depth = v.depth, Z_inv = v.Z_inv, attr = v.attr}
     in (f v0, f v1, f v2)
 
+  def get_triangle_pos 'varying (t: triangle varying) : triangle_fp_pos =
+    ( vec2f.map fixedpoint.f32 t.0.pos
+    , vec2f.map fixedpoint.f32 t.1.pos
+    , vec2f.map fixedpoint.f32 t.2.pos
+    )
+
   def get_triangle_fp_pos 'varying (t: triangle_fp varying) : triangle_fp_pos = (t.0.pos, t.1.pos, t.2.pos)
 
   def calc_tri_area_2 ((v0, v1, v2): (vec2fp.t, vec2fp.t, vec2fp.t)) : fixedpoint.t =
@@ -164,8 +170,7 @@ module mk_rasterizer (Varying: VaryingSpec) (FB: FramebufferSpec) = {
   module tri_mask = {
     local open fixedpoint
 
-    def calc_tile_tri_mask (tile_bbox: bbox2D i64) (tri: triangle_info_t) =
-      let tri_pos = get_triangle_fp_pos tri.verts_fp
+    def calc_tile_tri_mask (tile_bbox: bbox2D i64) (tri_pos: triangle_fp_pos) =
       let w0 = calc_wcoeffs tri_pos {x = fixedpoint.i64 tile_bbox.xmin, y = fixedpoint.i64 tile_bbox.ymin}
       let w1 = calc_wcoeffs tri_pos {x = fixedpoint.i64 tile_bbox.xmin, y = fixedpoint.i64 tile_bbox.ymax}
       let w2 = calc_wcoeffs tri_pos {x = fixedpoint.i64 tile_bbox.xmax, y = fixedpoint.i64 tile_bbox.ymin}
@@ -235,10 +240,11 @@ module mk_rasterizer (Varying: VaryingSpec) (FB: FramebufferSpec) = {
 
   def rasterize_fine (plot: plot_t)
                      (tile: tile_t)
-                     (tris: []triangle_info_t) : tile_t =
+                     (tris: []triangle Varying.t) : tile_t =
     let p =
       (vec2fp.+) {x = fixedpoint.i64 tile.bbox.xmin, y = fixedpoint.i64 tile.bbox.ymin}
                  {x = fixedpoint.f32 0.5, y = fixedpoint.f32 0.5}
+    let tris = map calc_triangle_info tris
     let buffer' =
       zip tile.buffer (indices tile.buffer)
       |> map (\(prev, i: i64) ->
@@ -248,26 +254,28 @@ module mk_rasterizer (Varying: VaryingSpec) (FB: FramebufferSpec) = {
                 in best_pixel_at plot prev ((vec2fp.+) p offset) tris)
     in tile with buffer = buffer'
 
-  local module bitset = bitset u16 {def max_bits = Config.tri_block_size}
+  local module bitset = bitset Config.tri_block_mask_type {def max_bits = Config.tri_block_size}
 
   def rasterize_coarse [k] [r]
                        (plot: plot_t)
-                       (tris: [k * Config.tri_block_size + r]triangle_info_t)
+                       (tris: [k * Config.tri_block_size + r]triangle Varying.t)
                        (tiles: []tile_t) : []tile_t =
     let (tri_blocks, tri_rest) = split tris
     let tiles' =
       tiles
       |> map (\tile ->
                 let f tri_block =
-                  bitset.init (length tri_block) (\i -> calc_tile_tri_mask tile.bbox tri_block[i])
+                  bitset.init (length tri_block)
+                              (\i -> calc_tile_tri_mask tile.bbox (get_triangle_pos tri_block[i]))
                   |> bitset.to_array
                   |> map (\i -> tri_block[i])
                   |> rasterize_fine plot tile
-                in tri_blocks
-                   |> unflatten
-                   |> map f
-                   |> reduce FB.merge_tiles (FB.default_tile tile.bbox)
-                   |> FB.merge_tiles (f tri_rest))
+                let b = tri_blocks |> unflatten
+                in zip b (indices b)
+                   |> map (\(x, i) -> (f x, i))
+                   |> reduce_comm FB.merge_tiles_comm (FB.default_tile tile.bbox, -1)
+                   |> FB.merge_tiles_comm (f tri_rest, length b)
+                   |> (.0))
     in tiles'
 
   def rasterize [n]
@@ -276,7 +284,7 @@ module mk_rasterizer (Varying: VaryingSpec) (FB: FramebufferSpec) = {
                 (fb: FB.t) : FB.t =
     let n_blocks = n / Config.tri_block_size
     let rest = n % Config.tri_block_size
-    let tris = map calc_triangle_info tris |> sized (n_blocks * Config.tri_block_size + rest)
+    let tris = tris |> sized (n_blocks * Config.tri_block_size + rest)
     let tiles' = rasterize_coarse plot tris <| FB.tiles fb
     in FB.set_tiles fb tiles'
 }
