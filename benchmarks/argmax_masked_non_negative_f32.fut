@@ -2,11 +2,11 @@
 
 def argmax_masked_non_negative_f32 [n] (mask: [n]bool) (xs: [n]f32) : (bool, f32, i64) =
   reduce_comm (\(m0, x0, i0) (m1, x1, i1) ->
-                 let x0' = x0 + (f32.bool m0)
-                 let x1' = x1 + (f32.bool m1)
+                 let x0' = if m0 then x0 else (-1f32)
+                 let x1' = if m1 then x1 else (-1f32)
                  in if x0' > x1' || (x0' == x1' && i0 < i1)
-                    then (true, x0, i0)
-                    else (m0 || m1, x1, i1))
+                    then (m0 || m1, x0', i0)
+                    else (m0 || m1, x1', i1))
               (false, -1f32, -1i64)
               (zip3 mask xs (iota n))
 
