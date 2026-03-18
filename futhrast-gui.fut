@@ -63,7 +63,7 @@ module lys : lys with text_content = lys_text_content.text_content = {
   module Config = {
                     def tile_size : i64 = 8
                     def tile_bin_size : i64 = 32
-                    def tri_batch_size : i64 = 256
+                    def tri_block_size : i64 = 256
                     def triangle_winding_order : #clockwise | #counterclockwise | #neither = #neither
                   }:
                   ConfigSpec

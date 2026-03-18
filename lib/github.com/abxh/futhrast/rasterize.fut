@@ -262,7 +262,7 @@ module mk_rasterizer (Varying: VaryingSpec) (FB: FramebufferSpec) = {
 
   def rasterize_coarse [q] [r]
                        (plot: plot_t)
-                       (tris: [q * Config.tri_batch_size + r]triangle_info_t)
+                       (tris: [q * Config.tri_block_size + r]triangle_info_t)
                        (tiles: []tile_t) : []tile_t =
     let (tri_blocks, tri_rest) = split tris
     let tiles' =
@@ -284,9 +284,9 @@ module mk_rasterizer (Varying: VaryingSpec) (FB: FramebufferSpec) = {
       for i in 0..<n do
         let bin = bins[i]
         let tris' = iota m |> filter (\j -> calc_tri_mask bin.bbox tris[j]) |> map (\j -> tris[j])
-        let q = length tris' / Config.tri_batch_size
-        let r = length tris' % Config.tri_batch_size
-        let tris' = tris' |> sized (q * Config.tri_batch_size + r)
+        let q = length tris' / Config.tri_block_size
+        let r = length tris' % Config.tri_block_size
+        let tris' = tris' |> sized (q * Config.tri_block_size + r)
         in bins' with [i] = (bin with tiles = rasterize_coarse plot tris' bin.tiles)
     in bins'
 
