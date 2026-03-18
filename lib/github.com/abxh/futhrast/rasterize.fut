@@ -271,7 +271,7 @@ module mk_rasterizer (Varying: VaryingSpec) (FB: FramebufferSpec) = {
                 tri_blocks
                 |> unflatten
                 |> map (rasterize_fine plot tile)
-                |> reduce_comm FB.merge_tiles (FB.default_tile tile.bbox)
+                |> reduce FB.merge_tiles (FB.default_tile tile.bbox)
                 |> FB.merge_tiles (rasterize_fine plot tile tri_rest))
     in tiles'
 
