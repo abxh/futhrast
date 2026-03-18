@@ -260,12 +260,19 @@ module mk_rasterizer (Varying: VaryingSpec) (FB: FramebufferSpec) = {
                 in best_pixel_at plot prev ((vec2fp.+) p offset) tris)
     in tile with buffer = buffer'
 
-  def rasterize_coarse (plot: plot_t)
-                       (tris: []triangle_info_t)
+  def rasterize_coarse [q] [r]
+                       (plot: plot_t)
+                       (tris: [q * Config.tri_batch_size + r]triangle_info_t)
                        (tiles: []tile_t) : []tile_t =
+    let (tri_blocks, tri_rest) = split tris
     let tiles' =
       tiles
-      |> map (\tile -> rasterize_fine plot tile tris)
+      |> map (\tile ->
+                tri_blocks
+                |> unflatten
+                |> map (rasterize_fine plot tile)
+                |> reduce_comm FB.merge_tiles (FB.default_tile tile.bbox)
+                |> FB.merge_tiles (rasterize_fine plot tile tri_rest))
     in tiles'
 
   def rasterize_bin [n] [m]
@@ -277,6 +284,9 @@ module mk_rasterizer (Varying: VaryingSpec) (FB: FramebufferSpec) = {
       for i in 0..<n do
         let bin = bins[i]
         let tris' = iota m |> filter (\j -> calc_tri_mask bin.bbox tris[j]) |> map (\j -> tris[j])
+        let q = length tris' / Config.tri_batch_size
+        let r = length tris' % Config.tri_batch_size
+        let tris' = tris' |> sized (q * Config.tri_batch_size + r)
         in bins' with [i] = (bin with tiles = rasterize_coarse plot tris' bin.tiles)
     in bins'
 

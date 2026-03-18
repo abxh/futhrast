@@ -52,6 +52,12 @@ module type FramebufferSpec = {
   -- | get depth buffer with [0;1] corresponding to [far;near] and (-1) as neutral element.
   val depth_buf : (fb: t) -> *[h fb][w fb]f32
 
+  -- | default tile, such that merging it with any other tile with result in the other tile
+  val default_tile : aabb2D i64 -> tile [Config.tile_size] target
+
+  -- | non-commutative tile merging operation
+  val merge_tiles : tile [Config.tile_size] target -> tile [Config.tile_size] target -> tile [Config.tile_size] target
+
   -- | read tile bins
   val get_bins : (fb: t) -> [bins_h fb * bins_w fb](tile_bin [Config.tile_bin_size] [Config.tile_size] target)
 
@@ -59,8 +65,13 @@ module type FramebufferSpec = {
   val set_bins : (fb: t) -> [bins_h fb * bins_w fb](tile_bin [Config.tile_bin_size] [Config.tile_size] target) -> t
 }
 
+module type TargetSpec = {
+  type t
+  val dummy : t
+}
+
 -- | Tiled framebuffer implementation
-module Framebuffer (Config: ConfigSpec) (Target: {type t})
+module Framebuffer (Config: ConfigSpec) (Target: TargetSpec)
   : FramebufferSpec
     with target = Target.t = {
   module Config = Config
@@ -148,6 +159,20 @@ module Framebuffer (Config: ConfigSpec) (Target: {type t})
                    let py = iy % Config.tile_size
                    let px = ix % Config.tile_size
                    in fb.bins[by * fb.bins_w + bx].tiles[ty * Config.tile_bin_size + tx].buffer[py * Config.tile_size + px].1)
+
+  def default_tile (bbox: aabb2D i64) : tile [Config.tile_size] target =
+    { buffer = replicate Config.tile_size (replicate Config.tile_size (Target.dummy, -1f32)) |> flatten
+    , bbox
+    }
+
+  def merge_tiles (t0: tile [Config.tile_size] target) (t1: tile [Config.tile_size] target) : tile [Config.tile_size] target =
+    let merge_pixel (a: (target, f32)) (b: (target, f32)): (target, f32) =
+      if b.1 > a.1
+      then b
+      else a
+    in { buffer = map2 merge_pixel t0.buffer t1.buffer
+       , bbox = t1.bbox
+       }
 
   def get_bins (fb: t) = fb.bins |> sized (bins_h fb * bins_w fb)
 
