@@ -172,6 +172,9 @@ module mk_rasterizer (Varying: VaryingSpec) (FB: FramebufferSpec) = {
       || a.ymax <= b.ymin
       || a.ymin >= b.ymax)
 
+  def bbox_larger_than_bin_size (a: bbox2D i64) =
+    (a.xmax - a.xmin) * (a.ymax - a.ymin) > Config.tile_bin_size * Config.tile_bin_size
+
   local
   module tri_mask = {
     local open fixedpoint

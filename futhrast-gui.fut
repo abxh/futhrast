@@ -3,11 +3,14 @@ import "lib/github.com/abxh/futhrast/rasterize"
 import "lib/github.com/abxh/futhrast/framebuffer"
 import "lib/github.com/abxh/futhrast/fragment"
 import "lib/github.com/abxh/futhrast/config"
+import "lib/github.com/abxh/futhrast/math/vec"
 
-type lys_state =
+type~ lys_state =
   { h: i64
   , w: i64
   , time: f32
+  , verts: [](f32, f32, f32)
+  , inds: []i64
   }
 
 module lys_text_content = {
@@ -22,11 +25,36 @@ module lys_text_content = {
   def text_colour = const argb.white
 }
 
+module lys_file = {
+  def input_file_names () =
+    ""
+    ++ "bunny.obj,"
+
+  def load_bin _ _ s = s
+
+  def load_obj_vertex_indices [n] (i: i64) (is: [n]i64) (s: lys_state) : lys_state =
+    match i
+    case 0 ->
+      s with inds = is
+    case _ ->
+      s
+
+  def load_obj_vertices [n] (i: i64) (vs: [n](f32, f32, f32)) (s: lys_state) : lys_state =
+    match i
+    case 0 ->
+      s with verts = vs
+    case _ ->
+      s
+
+  def load_obj_normals _ _ s = s
+  def load_obj_texcoords _ _ s = s
+}
+
 module lys : lys with text_content = lys_text_content.text_content = {
   open lys_text_content
-  open lys_no_file
+  open lys_file
 
-  type state = lys_state
+  type~ state = lys_state
 
   def grab_mouse = false
 
@@ -34,6 +62,8 @@ module lys : lys with text_content = lys_text_content.text_content = {
     { w
     , h
     , time = 3.14 / 2
+    , verts = replicate 0 (0, 0, 0)
+    , inds = replicate 0 (-1)
     }
 
   def resize (h: i64) (w: i64) (s: state) =
@@ -76,51 +106,39 @@ module lys : lys with text_content = lys_text_content.text_content = {
 
   local module Framebuffer = Framebuffer Config Target
   local module Rasterizer = mk_rasterizer Varying Framebuffer
+  local module Fragment = derive_fragment_ops Varying
 
   def render (s: state) : [][]argb.colour =
-    let t = f32.abs (f32.sin s.time * f32.sin s.time)
-    let f =
-      \f ->
-        { pos =
-            { x = f32.i64 f.pos.0
-            , y = f32.i64 f.pos.1
-            }
-        , Z_inv = 1
-        , depth = if f.order == 1 then 1 else 0.8
-        , attr = f.colour
-        }
+    let screen_to_window_f ({x = x: f32, y = y: f32}) =
+      let v = {x = (x + 1) / 2, y = (y + 1) / 2}
+      in {x = v.x * f32.i64 (s.w - 1), y = (1 - v.y) * f32.i64 (s.h - 1)}
+    let near_z = 0.1
+    let z_dist = f32.abs ((map (.1) s.verts |> f32.maximum) - (map (.1) s.verts |> f32.minimum))
+    let far_z = near_z + z_dist + 4
+    let transform_f t =
+      t
+      |> (\t ->
+            let depth = (far_z - (t.z + 3)) / (far_z - near_z)
+            in { pos =
+                   { x = t.x
+                   , y = t.y
+                   , z = depth
+                   , w = 1
+                   }
+               , attr = argb.scale argb.white depth
+               })
+      |> Fragment.proj
+      |> (\(pf: Fragment.pfragment) -> pf with pos = screen_to_window_f pf.pos)
+    let fs =
+      s.verts
+      |> map (\(v0, v1, v2) -> {x = v0, y = v1, z = -v2})
+      |> map (\t -> transform_f t)
+    let fs =
+      s.inds
+      |> map (\i -> fs[i])
     let ts =
-      [ ( { pos = (0, 0)
-          , colour = argb.green
-          , order = 1
-          }
-        , { pos =
-              ( (s.w - 1) / 2 + i64.f32 (f32.i64 (s.w - 1) / 2 * t)
-              , (s.h - 1) / 2 + i64.f32 (f32.i64 (s.h - 1) / 2 * t)
-              )
-          , colour = argb.blue
-          , order = 1
-          }
-        , { pos = (0, (s.h - 1) / 2 + i64.f32 (f32.i64 (s.h - 1) / 2 * t))
-          , colour = argb.red
-          , order = 1
-          }
-        )
-      , ( { pos = ((s.w - 1) / 2, s.h - 1)
-          , colour = argb.blue
-          , order = 0
-          }
-        , { pos = (s.w - 1, (s.h - 1) / 2)
-          , colour = argb.orange
-          , order = 0
-          }
-        , { pos = (s.w - 1, s.h - 1)
-          , colour = argb.magenta
-          , order = 0
-          }
-        )
-      ]
-      |> map (\(v0, v1, v2) -> (f v0, f v1, f v2))
+      iota (length fs / 3)
+      |> map (\i -> (fs[3 * i], fs[3 * i + 1], fs[3 * i + 2]))
     in Framebuffer.init {w = s.w, h = s.h} argb.black
        |> Rasterizer.rasterize (\v -> v.attr) ts
        |> Framebuffer.target_buf
