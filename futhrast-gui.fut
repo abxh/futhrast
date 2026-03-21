@@ -18,7 +18,7 @@ module lys_text_content = {
   type text_content = (i64)
 
   def text_format () =
-    ""
+    "FPS: %ld\n"
 
   def text_content (render_duration: f32) (_: lys_state) : text_content =
     (i64.f32 render_duration)
