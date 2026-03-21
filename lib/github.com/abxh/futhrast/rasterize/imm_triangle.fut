@@ -63,9 +63,8 @@ module mk_imm_triangle_rasterizer : mk_triangle_rasterizer_spec = \(V: VaryingSp
       ((i64.f32 (f.pos.y + 0.5), i64.f32 (f.pos.x + 0.5)), plot f, f.depth)
 
     def get_horizontal_line_size (((pl, pr), _): ((vec2f.t, vec2f.t), triangle)) =
-      -- assuming endpoints are sorted:
-      let xl = i64.f32 pl.x
-      let xr = i64.f32 pr.x
+      let xl = i64.f32 (f32.trunc (pl.x + 0.5))
+      let xr = i64.f32 (f32.trunc (pr.x + 0.5)) - 1
       in 1 + xr - xl
 
     def get_point_in_horizontal_line (((pl, _), (f0, f1, f2)): ((vec2f.t, vec2f.t), triangle)) (i: i64) : pfragment V.t =
@@ -86,17 +85,15 @@ module mk_imm_triangle_rasterizer : mk_triangle_rasterizer_spec = \(V: VaryingSp
       in (v0, v1, v2)
 
     def dxdy (a: vec2f.t) (b: vec2f.t) : f32 =
-      let dx = i64.f32 (b.x - a.x)
-      let dy = i64.f32 (b.y - a.y)
-      in if dy == 0
-         then 0
-         else f32.i64 dx / f32.i64 dy
+      let dx = b.x - a.x
+      let dy = b.y - a.y
+      in if dy == 0 then 0 else dx / dy
 
     def num_lines_in_triangle ((f0, f1, f2): triangle) : i64 =
       let (v0, _, v2) = sort_y_ascending (f0.pos, f1.pos, f2.pos)
       let top = f32.trunc (v2.y + 0.5)
       let bottom = f32.trunc (v0.y + 0.5)
-      in i64.f32 (top - bottom) + 1
+      in i64.f32 (top - bottom)
 
     def get_line_in_triangle ((f0, f1, f2): triangle) (i: i64) =
       let (v0, v1, v2) = sort_y_ascending (f0.pos, f1.pos, f2.pos)
@@ -104,7 +101,7 @@ module mk_imm_triangle_rasterizer : mk_triangle_rasterizer_spec = \(V: VaryingSp
       let v1 = v1 |> vec2f.map (\x -> f32.trunc (x + 0.5))
       let v2 = v2 |> vec2f.map (\x -> f32.trunc (x + 0.5))
       let y = v0.y + f32.i64 i
-      in if v0.y != v1.y && (v1.y == v2.y || i < i64.f32 (v1.y - v0.y) + 1)
+      in if v0.y != v1.y && (v1.y == v2.y || i <= i64.f32 (v1.y - v0.y))
          then -- upper half
               let sl0 = dxdy v0 v1
               let sl1 = dxdy v0 v2
