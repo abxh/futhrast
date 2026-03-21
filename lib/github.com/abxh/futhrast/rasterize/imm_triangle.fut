@@ -63,13 +63,16 @@ module mk_imm_triangle_rasterizer : mk_triangle_rasterizer_spec = \(V: VaryingSp
       ((i64.f32 (f.pos.y + 0.5), i64.f32 (f.pos.x + 0.5)), plot f, f.depth)
 
     def get_horizontal_line_size (((pl, pr), _): ((vec2f.t, vec2f.t), triangle)) =
-      let xl = i64.f32 (f32.trunc (pl.x + 0.5))
-      let xr = i64.f32 (f32.trunc (pr.x + 0.5)) - 1
-      in 1 + xr - xl
+      let xl = i64.f32 (pl.x + 0.5)
+      let xr = i64.f32 (pr.x + 0.5)
+      in xr - xl
 
     def get_point_in_horizontal_line (((pl, _), (f0, f1, f2)): ((vec2f.t, vec2f.t), triangle)) (i: i64) : pfragment V.t =
       let pos = {x = pl.x + f32.i64 i, y = pl.y}
       let (w0, w1) = calc_barycentric_coeffs (f0.pos, f1.pos, f2.pos) pos
+      -- get rid of small visual bugs from inaccuraries (workaround):
+      let w0 = (f32.max 0 (f32.min 1 w0))
+      let w1 = (f32.max 0 (f32.min 1 w1))
       let w = (w0, w1, 1 - w0 - w1)
       let Z_inv = barycentric f0.Z_inv f1.Z_inv f2.Z_inv w
       let depth = barycentric_affine Z_inv (f0.depth, f0.Z_inv) (f1.depth, f1.Z_inv) (f2.depth, f2.Z_inv) w
@@ -91,9 +94,9 @@ module mk_imm_triangle_rasterizer : mk_triangle_rasterizer_spec = \(V: VaryingSp
 
     def num_lines_in_triangle ((f0, f1, f2): triangle) : i64 =
       let (v0, _, v2) = sort_y_ascending (f0.pos, f1.pos, f2.pos)
-      let top = f32.trunc (v2.y + 0.5)
-      let bottom = f32.trunc (v0.y + 0.5)
-      in i64.f32 (top - bottom)
+      let top = i64.f32 (v2.y + 0.5)
+      let bottom = i64.f32 (v0.y + 0.5)
+      in top - bottom
 
     def get_line_in_triangle ((f0, f1, f2): triangle) (i: i64) =
       let (v0, v1, v2) = sort_y_ascending (f0.pos, f1.pos, f2.pos)
