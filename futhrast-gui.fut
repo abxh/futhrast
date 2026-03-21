@@ -1,9 +1,10 @@
 import "lib/github.com/abxh/lys/lys"
-import "lib/github.com/abxh/futhrast/rasterize"
-import "lib/github.com/abxh/futhrast/framebuffer"
-import "lib/github.com/abxh/futhrast/fragment"
-import "lib/github.com/abxh/futhrast/config"
+import "lib/github.com/abxh/futhrast/rasterize/imm_triangle"
+import "lib/github.com/abxh/futhrast/rasterize/line"
+import "lib/github.com/abxh/futhrast/rasterize/point"
+import "lib/github.com/abxh/futhrast/varying"
 import "lib/github.com/abxh/futhrast/math/vec"
+import "lib/github.com/abxh/futhrast/fragment"
 
 type~ lys_state =
   { h: i64
@@ -17,7 +18,7 @@ module lys_text_content = {
   type text_content = (i64)
 
   def text_format () =
-    "FPS: %ld\n"
+    ""
 
   def text_content (render_duration: f32) (_: lys_state) : text_content =
     (i64.f32 render_duration)
@@ -28,7 +29,7 @@ module lys_text_content = {
 module lys_file = {
   def input_file_names () =
     ""
-    ++ "bunny.obj,"
+    ++ "stanford_bunny.obj,"
 
   def load_bin _ _ s = s
 
@@ -82,21 +83,18 @@ module lys : lys with text_content = lys_text_content.text_content = {
   local
   module Varying : VaryingSpec with t = argb.colour = {
     type t = argb.colour
-    def zero = argb.black
     def (+) = argb.add_linear
     def (*) = flip argb.scale
-    def (-) x y = x + (-1 * y)
-    def (/) x s = (1 / s) * x
   }
 
-  local
-  module Config = {
-                    def tile_size : i64 = 8
-                    def tile_bin_size : i64 = 32
-                    def tri_block_size : i64 = 256
-                    def triangle_winding_order : #clockwise | #counterclockwise | #neither = #neither
-                  }:
-                  ConfigSpec
+  -- local
+  -- module Config = {
+  --                   def tile_size : i64 = 8
+  --                   def tile_bin_size : i64 = 32
+  --                   def tri_block_size : i64 = 1024
+  --                   def triangle_winding_order : #clockwise | #counterclockwise | #neither = #neither
+  --                 }:
+  --                 ConfigSpec
 
   local
   module Target = {
@@ -104,44 +102,39 @@ module lys : lys with text_content = lys_text_content.text_content = {
     def dummy = argb.black
   }
 
-  local module Framebuffer = Framebuffer Config Target
-  local module Rasterizer = mk_rasterizer Varying Framebuffer
-  local module Fragment = derive_fragment_ops Varying
+  local module Rasterizer = mk_imm_triangle_rasterizer Varying
 
   def render (s: state) : [][]argb.colour =
     let screen_to_window_f ({x = x: f32, y = y: f32}) =
       let v = {x = (x + 1) / 2, y = (y + 1) / 2}
       in {x = v.x * f32.i64 (s.w - 1), y = (1 - v.y) * f32.i64 (s.h - 1)}
-    let near_z = 0.1
-    let z_dist = f32.abs ((map (.1) s.verts |> f32.maximum) - (map (.1) s.verts |> f32.minimum))
-    let far_z = near_z + z_dist + 4
+    -- let near_z = 0.1
+    -- let z_dist = f32.abs ((map (.1) s.verts |> f32.maximum) - (map (.1) s.verts |> f32.minimum))
+    -- let far_z = near_z + z_dist + 4
     let transform_f t =
       t
       |> (\t ->
-            let depth = (far_z - (t.z + 3)) / (far_z - near_z)
-            in { pos =
-                   { x = t.x
-                   , y = t.y
-                   , z = depth
-                   , w = 1
-                   }
-               , attr = argb.scale argb.white depth
-               })
-      |> Fragment.proj
-      |> (\(pf: Fragment.pfragment) -> pf with pos = screen_to_window_f pf.pos)
+            { pos = {x = t.x, y = t.y, z = t.z, w = 1}
+            , attr = argb.scale argb.white t.z
+            })
+      |> proj
+      |> (\(pf: pfragment Varying.t) -> pf with pos = screen_to_window_f pf.pos)
     let fs =
       s.verts
-      |> map (\(v0, v1, v2) -> {x = v0, y = v1, z = -v2})
+      |> map (\(v0, v1, v2) -> {x = v0, y = v1, z = v2})
       |> map (\t -> transform_f t)
     let fs =
       s.inds
       |> map (\i -> fs[i])
     let ts =
-      iota (length fs / 3)
+      iota ((length fs) / 3)
       |> map (\i -> (fs[3 * i], fs[3 * i + 1], fs[3 * i + 2]))
-    in Framebuffer.init {w = s.w, h = s.h} argb.black
-       |> Rasterizer.rasterize (\v -> v.attr) ts
-       |> Framebuffer.target_buf
+    in Rasterizer.rasterize (\f -> f.attr)
+                            (\x y -> if x > y then #left else #right)
+                            ts
+                            (argb.black, -f32.inf)
+                            (replicate s.h (replicate s.w (argb.black)), replicate s.h (replicate s.w (-f32.inf)))
+       |> (.0)
 }
 
 -- {v0=(0,s.h-1), v1=(s.w-1,0), v2=(s.w-1,s.h-1)},
