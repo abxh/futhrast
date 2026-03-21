@@ -21,9 +21,9 @@ module lys_text_content = {
 
   def text_format () =
     "FPS: %ld\n"
-    ++ "point (key 0)\n"
-    ++ "line (key 1)\n"
-    ++ "triangle (key 2)\n"
+    ++ "point (key 1)\n"
+    ++ "line (key 2)\n"
+    ++ "triangle (key 3)\n"
 
   def text_content (render_duration: f32) (_: lys_state) : text_content =
     (i64.f32 render_duration)
