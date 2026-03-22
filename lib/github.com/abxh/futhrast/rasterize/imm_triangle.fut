@@ -79,12 +79,18 @@ module mk_imm_triangle_rasterizer : mk_triangle_rasterizer_spec = \(V: VaryingSp
       in ((i64.i32 f.pos.y, i64.i32 f.pos.x), plot f', f.depth)
 
     def get_horizontal_line_size (((pl, pr), _): ((vec2i32.t, vec2i32.t), triangle)) : i64 =
-      1 + i64.i32 (pr.x - pl.x)
+      -- exclusive range to fullfill top-left edge rule
+      i64.i32 (pr.x - pl.x)
 
     def get_point_in_horizontal_line (((pl, _), (f0, f1, f2)): ((vec2i32.t, vec2i32.t), triangle))
                                      (i: i64) : pfragment_generic i32 V.t =
       let pos = {x = pl.x + i32.i64 i, y = pl.y}
-      let w = calc_barycentric_coeffs (f0.pos, f1.pos, f2.pos) pos
+      let (w0, w1, w2) = calc_barycentric_coeffs (f0.pos, f1.pos, f2.pos) pos
+      -- workaround to fix rounding errors resulting in glitched pixels:
+      let w0 = f32.max 0 (f32.min 1 w0)
+      let w1 = f32.max 0 (f32.min 1 w1)
+      let w2 = f32.max 0 (f32.min 1 w2)
+      let w = (w0, w1, w2)
       let Z_inv = barycentric f0.Z_inv f1.Z_inv f2.Z_inv w
       let depth = barycentric_affine Z_inv (f0.depth, f0.Z_inv) (f1.depth, f1.Z_inv) (f2.depth, f2.Z_inv) w
       let attr = barycentric_affine_attr Z_inv (f0.attr, f0.Z_inv) (f1.attr, f1.Z_inv) (f2.attr, f2.Z_inv) w
@@ -104,14 +110,17 @@ module mk_imm_triangle_rasterizer : mk_triangle_rasterizer_spec = \(V: VaryingSp
       in if dy == 0 then 0 else f32.i32 dx / f32.i32 dy
 
     def num_lines_in_triangle ((f0, f1, f2): triangle) : i64 =
-      let top = f0.pos.y `i32.max` f1.pos.y `i32.max` f2.pos.y
-      let bottom = f0.pos.y `i32.min` f1.pos.y `i32.min` f2.pos.y
-      in 1 + i64.i32 (top - bottom)
+      let (v0, v1, v2) = sort_y_ascending (f0.pos, f1.pos, f2.pos)
+      let top = v2.y
+      let bottom = v0.y
+      -- fullfill top-left edge rule by excluding bottom edge
+      let offset = if v0.y == v1.y then 0 else 1
+      in offset + i64.i32 (top - bottom)  
 
     def get_line_in_triangle ((f0, f1, f2): triangle) (i: i64) =
       let (v0, v1, v2) = sort_y_ascending (f0.pos, f1.pos, f2.pos)
       let y = v0.y + i32.i64 i
-      in if v0.y != v1.y && (v1.y == v2.y || i <= i64.i32 (v1.y - v0.y))
+      in if y <= v1.y
          then -- upper half
               let sl0 = dxdy v0 v1
               let sl1 = dxdy v0 v2
@@ -125,7 +134,7 @@ module mk_imm_triangle_rasterizer : mk_triangle_rasterizer_spec = \(V: VaryingSp
               let sl1 = dxdy v0 v2
               let dy = y - v1.y
               let p0 = {x = v1.x + i32.f32 (f32.round (sl0 * f32.i32 dy)), y}
-              let p1 = {x = v0.x + i32.f32 (f32.round (sl1 * f32.i32 dy)), y}
+              let p1 = {x = v0.x + i32.f32 (f32.round (sl1 * f32.i64 i)), y}
               let (pl, pr) = if p0.x <= p1.x then (p0, p1) else (p1, p0)
               in ((pl, pr), (f0, f1, f2))
 

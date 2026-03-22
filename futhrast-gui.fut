@@ -34,7 +34,7 @@ module lys_text_content = {
 module lys_file = {
   def input_file_names () =
     ""
-    ++ "stanford_bunny.obj,"
+    ++ "blender_monkey.obj,"
 
   def load_bin _ _ s = s
 
