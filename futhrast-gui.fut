@@ -11,8 +11,11 @@ type~ lys_state =
   { h: i64
   , w: i64
   , time: f32
-  , verts: [](f32, f32, f32)
-  , inds: []i64
+  , verts0: [](f32, f32, f32)
+  , inds0: []i64
+  , verts1: [](f32, f32, f32)
+  , inds1: []i64
+  , render_model: #bunny | #monkey
   , render_kind: #point | #line | #triangle
   }
 
@@ -24,6 +27,8 @@ module lys_text_content = {
     ++ "point (key 1)\n"
     ++ "line (key 2)\n"
     ++ "triangle (key 3)\n"
+    ++ "bunny (key b)\n"
+    ++ "monkey (key m)\n"
 
   def text_content (render_duration: f32) (_: lys_state) : text_content =
     (i64.f32 render_duration)
@@ -34,6 +39,7 @@ module lys_text_content = {
 module lys_file = {
   def input_file_names () =
     ""
+    ++ "stanford_bunny.obj,"
     ++ "blender_monkey.obj,"
 
   def load_bin _ _ s = s
@@ -41,14 +47,18 @@ module lys_file = {
   def load_obj_vertex_indices [n] (i: i64) (is: [n]i64) (s: lys_state) : lys_state =
     match i
     case 0 ->
-      s with inds = is
+      s with inds0 = is
+    case 1 ->
+      s with inds1 = is
     case _ ->
       s
 
   def load_obj_vertices [n] (i: i64) (vs: [n](f32, f32, f32)) (s: lys_state) : lys_state =
     match i
     case 0 ->
-      s with verts = vs
+      s with verts0 = vs
+    case 1 ->
+      s with verts1 = vs
     case _ ->
       s
 
@@ -68,8 +78,11 @@ module lys : lys with text_content = lys_text_content.text_content = {
     { w
     , h
     , time = 3.14 / 2
-    , verts = replicate 0 (0, 0, 0)
-    , inds = replicate 0 (-1)
+    , verts0 = replicate 0 (0, 0, 0)
+    , inds0 = replicate 0 (-1)
+    , verts1 = replicate 0 (0, 0, 0)
+    , inds1 = replicate 0 (-1)
+    , render_model = #bunny
     , render_kind = #triangle
     }
 
@@ -83,6 +96,10 @@ module lys : lys with text_content = lys_text_content.text_content = {
     then s with render_kind = #line
     else if key == SDLK_3
     then s with render_kind = #triangle
+    else if key == SDLK_b
+    then s with render_model = #bunny
+    else if key == SDLK_m
+    then s with render_model = #monkey
     else s
 
   def keyup (_: i32) (s: state) = s
@@ -124,6 +141,8 @@ module lys : lys with text_content = lys_text_content.text_content = {
   local module T = mk_imm_triangle_rasterizer Varying
 
   def render (s: state) : [][]argb.colour =
+    let verts = if s.render_model == #bunny then s.verts0 else s.verts1
+    let inds = if s.render_model == #bunny then s.inds0 else s.inds1
     let time = s.time
     let screen_to_window_f ({x = x: f32, y = y: f32}) =
       let v = {x = (x + 1) / 2, y = (y + 1) / 2}
@@ -143,11 +162,11 @@ module lys : lys with text_content = lys_text_content.text_content = {
       |> proj
       |> (\(pf: pfragment Varying.t) -> pf with pos = screen_to_window_f pf.pos)
     let fs =
-      s.verts
+      verts
       |> map (\(v0, v1, v2) -> {x = v0, y = v1, z = v2})
       |> map (\t -> transform_f t)
     let fs =
-      s.inds
+      inds
       |> map (\i -> fs[i])
     let common_args =
       ( (\f -> f.attr)
