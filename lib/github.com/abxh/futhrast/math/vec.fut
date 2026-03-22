@@ -7,6 +7,9 @@
 -- module vec2i = mk_vspace2 i64
 -- module vec3i = mk_vspace3 i64
 -- module vec4i = mk_vspace4 i64
+-- module vec2i32 = mk_vspace2 i32
+-- module vec3i32 = mk_vspace3 i32
+-- module vec4i32 = mk_vspace4 i32
 -- module vec2f = mk_vspace2f f32
 -- module vec3f = mk_vspace3f f32
 -- module vec4f = mk_vspace4f f32
@@ -442,6 +445,9 @@ module mk_vspace4f (scalar: FScalarSpec) : FVSpaceSpec4 with value = scalar.t = 
 module vec2i = mk_vspace2 i64
 module vec3i = mk_vspace3 i64
 module vec4i = mk_vspace4 i64
+module vec2i32 = mk_vspace2 i32
+module vec3i32 = mk_vspace3 i32
+module vec4i32 = mk_vspace4 i32
 module vec2f = mk_vspace2f f32
 module vec3f = mk_vspace3f f32
 module vec4f = mk_vspace4f f32
