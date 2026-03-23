@@ -205,7 +205,7 @@ module lys : lys with text_content = lys_text_content.text_content = {
                , attr = argb.scale argb.white z_norm
                })
       |> proj
-      |> (\(pf: pfragment Varying.t) -> pf with pos = screen_to_window_f pf.pos)
+      |> (\(pf: fragment Varying.t) -> pf with pos = screen_to_window_f pf.pos)
     let fs =
       verts
       |> map (\(v0, v1, v2) -> {x = v0, y = v1, z = v2})

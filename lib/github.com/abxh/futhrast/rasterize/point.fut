@@ -10,9 +10,9 @@ module type mk_point_rasterizer_spec =
     -- point fragments, a neutral value for the target/depth buffers and
     -- the target/depth buffers themselves
     val rasterize 'target [n] [h] [w] :
-      (plot: pfragment V.t -> target)
+      (plot: fragment V.t -> target)
       -> (depth_cmp: f32 -> f32 -> #left | #right)
-      -> [n]pfragment V.t
+      -> [n]fragment V.t
       -> (ne: (target, f32))
       -> ([h][w]target, [h][w]f32)
       -> ([h][w]target, [h][w]f32)
@@ -21,13 +21,13 @@ module type mk_point_rasterizer_spec =
 -- | point rasterizer
 module mk_point_rasterizer : mk_point_rasterizer_spec = \(V: VaryingSpec) ->
   {
-    def plot_fragment 'target (plot: (pfragment V.t -> target)) (f: pfragment V.t) =
+    def plot_fragment 'target (plot: (fragment V.t -> target)) (f: fragment V.t) =
       ((i64.f32 (f.pos.y + 0.5), i64.f32 (f.pos.x + 0.5)), plot f, f.depth)
 
     def rasterize 'target [n] [h] [w]
-                  (plot: (pfragment V.t -> target))
+                  (plot: (fragment V.t -> target))
                   (depth_cmp: f32 -> f32 -> #left | #right)
-                  (frags: [n]pfragment V.t)
+                  (frags: [n]fragment V.t)
                   (ne: (target, f32))
                   (target_buf: [h][w]target, depth_buf: [h][w]f32) : ([h][w]target, [h][w]f32) =
       let (is, target_values, depth_values) =
@@ -64,7 +64,7 @@ module point_rasterizer_test = {
       vs
       |> filter (\v -> 0 <= v.0 && v.0 < f32.i64 w && 0 <= v.1 && v.1 < f32.i64 h)
       |> map (\(x, y) -> {pos = {x, y}, depth = 1, Z_inv = 1, attr = true})
-    let plot = (\(f: pfragment bool) -> f.attr)
+    let plot = (\(f: fragment bool) -> f.attr)
     let depth_cmp (x: f32) (y: f32) = if x > y then #left else #right
     in M.rasterize plot depth_cmp frags (false, -f32.inf) (target_buf, depth_buf) |> (.0)
        |> map (map i32.bool)

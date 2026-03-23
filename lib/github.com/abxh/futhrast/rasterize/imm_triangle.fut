@@ -15,9 +15,9 @@ module type mk_triangle_rasterizer_spec =
     -- triangle fragments, a neutral value for the target/depth buffers and
     -- the target/depth buffers themselves
     val rasterize 'target [n] [h] [w] :
-      (plot: pfragment V.t -> target)
+      (plot: fragment V.t -> target)
       -> (depth_cmp: f32 -> f32 -> #left | #right)
-      -> [n](pfragment V.t, pfragment V.t, pfragment V.t)
+      -> [n](fragment V.t, fragment V.t, fragment V.t)
       -> (ne: (target, f32))
       -> ([h][w]target, [h][w]f32)
       -> ([h][w]target, [h][w]f32)
@@ -36,13 +36,13 @@ module mk_imm_triangle_rasterizer : mk_triangle_rasterizer_spec = \(V: VaryingSp
     local module F32 = VaryingExtensions (f32)
 
     local
-    type triangle = (pfragment_generic i32 V.t, pfragment_generic i32 V.t, pfragment_generic i32 V.t)
+    type triangle = (fragment_generic i32 V.t, fragment_generic i32 V.t, fragment_generic i32 V.t)
 
     def barycentric = F32.barycentric
     def barycentric_affine = F32.barycentric_perspective_corrected_w_Z_inv_t
     def barycentric_affine_attr = V.barycentric_perspective_corrected_w_Z_inv_t
 
-    def round_fragment (f: pfragment_generic f32 V.t) : pfragment_generic i32 V.t =
+    def round_fragment (f: fragment_generic f32 V.t) : fragment_generic i32 V.t =
       { pos = {x = i32.f32 (f.pos.x + 0.5), y = i32.f32 (f.pos.y + 0.5)}
       , depth = f.depth
       , Z_inv = f.Z_inv
@@ -69,7 +69,7 @@ module mk_imm_triangle_rasterizer : mk_triangle_rasterizer_spec = \(V: VaryingSp
       let w2 = 1 - w0 - w1
       in (w0, w1, w2)
 
-    def plot_fragment 'target (plot: (pfragment V.t -> target)) (f: pfragment_generic i32 V.t) =
+    def plot_fragment 'target (plot: (fragment V.t -> target)) (f: fragment_generic i32 V.t) =
       let f' =
         { pos = {x = f32.i32 f.pos.x, y = f32.i32 f.pos.y}
         , depth = f.depth
@@ -83,7 +83,7 @@ module mk_imm_triangle_rasterizer : mk_triangle_rasterizer_spec = \(V: VaryingSp
       i64.i32 (pr.x - pl.x)
 
     def get_point_in_horizontal_line (((pl, _), (f0, f1, f2)): ((vec2i32.t, vec2i32.t), triangle))
-                                     (i: i64) : pfragment_generic i32 V.t =
+                                     (i: i64) : fragment_generic i32 V.t =
       let pos = {x = pl.x + i32.i64 i, y = pl.y}
       let (w0, w1, w2) = calc_barycentric_coeffs (f0.pos, f1.pos, f2.pos) pos
       -- workaround to fix rounding errors resulting in glitched pixels:
@@ -115,7 +115,7 @@ module mk_imm_triangle_rasterizer : mk_triangle_rasterizer_spec = \(V: VaryingSp
       let bottom = v0.y
       -- fullfill top-left edge rule by excluding bottom edge
       let offset = if v0.y == v1.y then 0 else 1
-      in offset + i64.i32 (top - bottom)  
+      in offset + i64.i32 (top - bottom)
 
     def get_line_in_triangle ((f0, f1, f2): triangle) (i: i64) =
       let (v0, v1, v2) = sort_y_ascending (f0.pos, f1.pos, f2.pos)
@@ -139,9 +139,9 @@ module mk_imm_triangle_rasterizer : mk_triangle_rasterizer_spec = \(V: VaryingSp
               in ((pl, pr), (f0, f1, f2))
 
     def rasterize 'target [n] [h] [w]
-                  (plot: (pfragment V.t -> target))
+                  (plot: (fragment V.t -> target))
                   (depth_cmp: f32 -> f32 -> #left | #right)
-                  (frags: [n](pfragment V.t, pfragment V.t, pfragment V.t))
+                  (frags: [n](fragment V.t, fragment V.t, fragment V.t))
                   (ne: (target, f32))
                   (target_buf: [h][w]target, depth_buf: [h][w]f32) : ([h][w]target, [h][w]f32) =
       let (is, target_values, depth_values) =
@@ -187,7 +187,7 @@ module immediate_triangle_rasterizer_test = {
                 , {pos = {x = f1.0, y = f1.1}, depth = 1, Z_inv = 1, attr = true}
                 , {pos = {x = f2.0, y = f2.1}, depth = 1, Z_inv = 1, attr = true}
                 ))
-    let plot = (\(f: pfragment bool) -> f.attr)
+    let plot = (\(f: fragment bool) -> f.attr)
     let depth_cmp (x: f32) (y: f32) = if x > y then #left else #right
     in M.rasterize plot depth_cmp frags (false, -f32.inf) (target_buf, depth_buf) |> (.0)
        |> map (map i32.bool)

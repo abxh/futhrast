@@ -12,9 +12,9 @@ module type mk_line_rasterizer_spec =
     -- line fragments, a neutral value for the target/depth buffers and
     -- the target/depth buffers themselves
     val rasterize 'target [n] [h] [w] :
-      (plot: pfragment V.t -> target)
+      (plot: fragment V.t -> target)
       -> (depth_cmp: f32 -> f32 -> #left | #right)
-      -> [n](pfragment V.t, pfragment V.t)
+      -> [n](fragment V.t, fragment V.t)
       -> (ne: (target, f32))
       -> ([h][w]target, [h][w]f32)
       -> ([h][w]target, [h][w]f32)
@@ -30,12 +30,12 @@ module mk_line_rasterizer : mk_line_rasterizer_spec = \(V: VaryingSpec) ->
     module F32 = VaryingExtensions (f32)
 
     local
-    type line = (pfragment_generic i32 V.t, pfragment_generic i32 V.t)
+    type line = (fragment_generic i32 V.t, fragment_generic i32 V.t)
 
     def lerp_affine_f32 = F32.lerp_perspective_corrected_w_Z_inv_t
     def lerp_affine_attr = V.lerp_perspective_corrected_w_Z_inv_t
 
-    def round_fragment (f: pfragment_generic f32 V.t) : pfragment_generic i32 V.t =
+    def round_fragment (f: fragment_generic f32 V.t) : fragment_generic i32 V.t =
       { pos = {x = i32.f32 (f.pos.x + 0.5), y = i32.f32 (f.pos.y + 0.5)}
       , depth = f.depth
       , Z_inv = f.Z_inv
@@ -45,7 +45,7 @@ module mk_line_rasterizer : mk_line_rasterizer_spec = \(V: VaryingSpec) ->
     def compare_i32 (l: i32) (r: i32) : i32 =
       i32.bool (l < r) - i32.bool (l > r)
 
-    def plot_fragment 'target (plot: (pfragment V.t -> target)) (f: pfragment_generic i32 V.t) =
+    def plot_fragment 'target (plot: (fragment V.t -> target)) (f: fragment_generic i32 V.t) =
       let f' =
         { pos = {x = f32.i32 f.pos.x, y = f32.i32 f.pos.y}
         , depth = f.depth
@@ -64,7 +64,7 @@ module mk_line_rasterizer : mk_line_rasterizer_spec = \(V: VaryingSpec) ->
       let {x = x1, y = y1} = v1.pos
       in 1 + i64.i32 (i32.max (i32.abs (x1 - x0)) (i32.abs (y1 - y0)))
 
-    def get_point_in_line ((v0, v1): line) (i: i64) : pfragment_generic i32 V.t =
+    def get_point_in_line ((v0, v1): line) (i: i64) : fragment_generic i32 V.t =
       let (p0, p1) = (v0.pos, v1.pos)
       in if i32.abs (p0.x - p1.x) > i32.abs (p0.y - p1.y)
          then let dir = compare_i32 (p0.x) (p1.x)
@@ -91,9 +91,9 @@ module mk_line_rasterizer : mk_line_rasterizer_spec = \(V: VaryingSpec) ->
               in {pos, depth, Z_inv, attr}
 
     def rasterize 'target [n] [h] [w]
-                  (plot: (pfragment V.t -> target))
+                  (plot: (fragment V.t -> target))
                   (depth_cmp: f32 -> f32 -> #left | #right)
-                  (frags: [n](pfragment V.t, pfragment V.t))
+                  (frags: [n](fragment V.t, fragment V.t))
                   (ne: (target, f32))
                   (target_buf: [h][w]target, depth_buf: [h][w]f32) : ([h][w]target, [h][w]f32) =
       let (is, target_values, depth_values) =
@@ -137,7 +137,7 @@ module line_rasterizer_test = {
                 ( {pos = {x = f0.0, y = f0.1}, depth = 1, Z_inv = 1, attr = true}
                 , {pos = {x = f1.0, y = f1.1}, depth = 1, Z_inv = 1, attr = true}
                 ))
-    let plot = (\(f: pfragment bool) -> f.attr)
+    let plot = (\(f: fragment bool) -> f.attr)
     let depth_cmp (x: f32) (y: f32) = if x > y then #left else #right
     in M.rasterize plot depth_cmp frags (false, -f32.inf) (target_buf, depth_buf) |> (.0)
        |> map (map i32.bool)
