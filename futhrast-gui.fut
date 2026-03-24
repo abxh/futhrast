@@ -212,7 +212,7 @@ module lys : lys with text_content = lys_text_content.text_content = {
        case #points ->
          R.init {w = s.w, h = s.h} argb.black
          |> R.render s
-                     { primitive_type = s.render_kind
+                     { primitive_type = #points
                      , vertices = verts
                      , indices = inds
                      }
@@ -236,7 +236,7 @@ module lys : lys with text_content = lys_text_content.text_content = {
        case #triangles ->
          R.init {w = s.w, h = s.h} argb.black
          |> R.render s
-                     { primitive_type = s.render_kind
+                     { primitive_type = #triangles
                      , vertices = verts
                      , indices = inds
                      }
@@ -254,6 +254,3 @@ module lys : lys with text_content = lys_text_content.text_content = {
          |> R.unpack
          |> (.0)
 }
-
--- let ts = iota ((length fs)) |> map (\i -> (fs[2 * i], fs[2 * i + 1]))
--- {v0=(0,s.h-1), v1=(s.w-1,0), v2=(s.w-1,s.h-1)},
