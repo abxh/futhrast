@@ -243,6 +243,14 @@ module lys : lys with text_content = lys_text_content.text_content = {
                      on_vertex
                      on_fragment
                      argb.black
+         |> R.render_wireframe s
+                               { primitive_type = #triangles
+                               , vertices = verts
+                               , indices = inds
+                               }
+                               on_vertex
+                               on_fragment
+                               argb.black
          |> R.unpack
          |> (.0)
 }
