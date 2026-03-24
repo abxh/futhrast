@@ -65,11 +65,11 @@ module type RenderSetupSpec =
   }
 
 -- | rendering setup implementation
-module RenderSetup (C: ConfigSpec) (TriangleRasterizer: TriangleRasterizerSpec) : RenderSetupSpec = \(V: VaryingSpec) ->
+module RenderSetup (C: ConfigSpec) : RenderSetupSpec = \(V: VaryingSpec) ->
   {
     local module Point = PointRasterizer V
     local module Line = LineRasterizer V
-    local module Triangle = TriangleRasterizer V
+    local module Triangle = TriangleImmRasterizer V
 
     local
     def map_screen_to_window 'varying

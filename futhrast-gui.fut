@@ -183,7 +183,7 @@ module lys : lys with text_content = lys_text_content.text_content = {
     def depth_type : #normal_z | #reversed_z = #reversed_z
   }
 
-  local module R = RenderSetup Config TriangleImmRasterizer Varying
+  local module R = RenderSetup Config Varying
 
   local
   def on_vertex (s: state) (v: (f32, f32, f32)) : vertex_out Varying.t =
