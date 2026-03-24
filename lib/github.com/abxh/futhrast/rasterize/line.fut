@@ -4,7 +4,7 @@ import "../types"
 
 local
 -- | line rasterizer specfication
-module type mk_line_rasterizer_spec =
+module type LineRasterizerSpec =
   (V: VaryingSpec)
   -> {
     -- | rasterize line given plot function, depth comparision function,
@@ -20,7 +20,7 @@ module type mk_line_rasterizer_spec =
   }
 
 -- | line rasterizer
-module mk_line_rasterizer : mk_line_rasterizer_spec = \(V: VaryingSpec) ->
+module LineRasterizer : LineRasterizerSpec = \(V: VaryingSpec) ->
   {
     -- based on:
     -- futhark-book.readthedocs.io/en/latest/irregular-flattening.html#drawing-lines
@@ -108,7 +108,7 @@ module mk_line_rasterizer : mk_line_rasterizer_spec = \(V: VaryingSpec) ->
   }
 
 -- line rasterizer for testing purposes. can use the REPL for this
-module line_rasterizer_test = {
+module LineRasterizerTest = {
   local
   module V : VaryingSpec with t = bool = {
     type t = bool
@@ -119,7 +119,7 @@ module line_rasterizer_test = {
   -- note: above do not satisfy all the algrebraic properties required for varying,
   -- but is defined such for testing purposes
 
-  local module M = mk_line_rasterizer (V)
+  local module M = LineRasterizer (V)
 
   def rasterize_line_demo [n] (h: i64) (w: i64) (vs: [n]((f32, f32), (f32, f32))) : [h][w]i32 =
     let dest = replicate h (replicate w (false, -f32.inf))
@@ -142,4 +142,4 @@ module line_rasterizer_test = {
        |> map (map i32.bool)
 }
 
-open line_rasterizer_test
+open LineRasterizerTest

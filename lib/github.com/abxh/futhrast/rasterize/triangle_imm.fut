@@ -5,9 +5,8 @@ import "../../../diku-dk/segmented/segmented"
 import "../types"
 import "../math/vec"
 
-local
 -- | triangle rasterizer specfication
-module type mk_triangle_rasterizer_spec =
+module type TriangleRasterizerSpec =
   (V: VaryingSpec)
   -> {
     -- | rasterize triangle given plot function, depth comparision function,
@@ -23,7 +22,7 @@ module type mk_triangle_rasterizer_spec =
   }
 
 -- | immediate triangle rasterizer
-module mk_imm_triangle_rasterizer : mk_triangle_rasterizer_spec = \(V: VaryingSpec) ->
+module TriangleImmRasterizer : TriangleRasterizerSpec = \(V: VaryingSpec) ->
   {
     -- based on:
     -- futhark-book.readthedocs.io/en/latest/irregular-flattening.html#drawing-triangles
@@ -157,7 +156,7 @@ module mk_imm_triangle_rasterizer : mk_triangle_rasterizer_spec = \(V: VaryingSp
   }
 
 -- immediate triangle rasterizer for testing purposes. can use the REPL for this
-module immediate_triangle_rasterizer_test = {
+module TriangleImmRasterizerTest = {
   local
   module V : VaryingSpec with t = bool = {
     type t = bool
@@ -168,7 +167,7 @@ module immediate_triangle_rasterizer_test = {
   -- note: above do not satisfy all the algrebraic properties required for varying,
   -- but is defined such for testing purposes
 
-  local module M = mk_imm_triangle_rasterizer (V)
+  local module M = TriangleImmRasterizer (V)
 
   def rasterize_triangle_imm_test [n] (h: i64) (w: i64) (vs: [n]((f32, f32), (f32, f32), (f32, f32))) : [h][w]i32 =
     let dest = replicate h (replicate w (false, -f32.inf))
@@ -192,4 +191,4 @@ module immediate_triangle_rasterizer_test = {
        |> map (map i32.bool)
 }
 
-open immediate_triangle_rasterizer_test
+open TriangleImmRasterizerTest

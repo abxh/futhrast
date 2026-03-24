@@ -6,7 +6,7 @@ import "types"
 import "math/vec"
 import "rasterize/point"
 import "rasterize/line"
-import "rasterize/imm_triangle"
+import "rasterize/triangle_imm"
 
 -- | configuration options
 module type ConfigSpec = {
@@ -65,11 +65,11 @@ module type RenderSetupSpec =
   }
 
 -- | rendering setup implementation
-module RenderSetup (C: ConfigSpec) : RenderSetupSpec = \(V: VaryingSpec) ->
+module RenderSetup (C: ConfigSpec) (TriangleRasterizer: TriangleRasterizerSpec) : RenderSetupSpec = \(V: VaryingSpec) ->
   {
-    local module Point = mk_point_rasterizer V
-    local module Line = mk_line_rasterizer V
-    local module ImmTriangle = mk_imm_triangle_rasterizer V
+    local module Point = PointRasterizer V
+    local module Line = LineRasterizer V
+    local module Triangle = TriangleRasterizer V
 
     local
     def map_screen_to_window 'varying
@@ -142,7 +142,7 @@ module RenderSetup (C: ConfigSpec) : RenderSetupSpec = \(V: VaryingSpec) ->
            |> map (\(v0, v1, v2) -> (proj v0, proj v1, proj v2))
            |> map (\(v0, v1, v2) -> (stw_f v0, stw_f v1, stw_f v2))
            |> filter winding_order_check
-           |> ImmTriangle.rasterize (on_frag u) depth_cmp ne fb
+           |> Triangle.rasterize (on_frag u) depth_cmp ne fb
 
     def render_wireframe 'uniform 'vertex 'target [w] [h]
                          (u: uniform)

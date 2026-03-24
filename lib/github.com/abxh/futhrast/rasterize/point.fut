@@ -2,7 +2,7 @@ import "../types"
 
 local
 -- | point rasterizer specfication
-module type mk_point_rasterizer_spec =
+module type PointRasterizerSpec =
   (V: VaryingSpec)
   -> {
     -- | rasterize point given plot function, depth comparision function,
@@ -18,7 +18,7 @@ module type mk_point_rasterizer_spec =
   }
 
 -- | point rasterizer
-module mk_point_rasterizer : mk_point_rasterizer_spec = \(V: VaryingSpec) ->
+module PointRasterizer : PointRasterizerSpec = \(V: VaryingSpec) ->
   {
     def plot_fragment 'target (plot: (fragment V.t -> target)) (f: fragment V.t) =
       ((i64.f32 (f.pos.y + 0.5), i64.f32 (f.pos.x + 0.5)), plot f, f.depth)
@@ -39,7 +39,7 @@ module mk_point_rasterizer : mk_point_rasterizer_spec = \(V: VaryingSpec) ->
   }
 
 -- point rasterizer for testing purposes. can use the REPL for this
-module point_rasterizer_test = {
+module PointRasterizerTest = {
   local
   module V : VaryingSpec with t = bool = {
     type t = bool
@@ -50,7 +50,7 @@ module point_rasterizer_test = {
   -- note: above do not satisfy all the algrebraic properties required for varying,
   -- but is defined such for testing purposes
 
-  local module M = mk_point_rasterizer (V)
+  local module M = PointRasterizer (V)
 
   def rasterize_point_test [n] (h: i64) (w: i64) (vs: [n](f32, f32)) : [h][w]i32 =
     let dest = replicate h (replicate w (false, -f32.inf))
@@ -70,4 +70,4 @@ module point_rasterizer_test = {
        |> map (map i32.bool)
 }
 
-open point_rasterizer_test
+open PointRasterizerTest
