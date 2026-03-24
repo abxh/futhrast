@@ -2,8 +2,7 @@
 
 import "../../../diku-dk/segmented/segmented"
 
-import "../fragment"
-import "../varying"
+import "../types"
 import "../math/vec"
 
 local
@@ -17,10 +16,10 @@ module type mk_triangle_rasterizer_spec =
     val rasterize 'target [n] [h] [w] :
       (plot: fragment V.t -> target)
       -> (depth_cmp: f32 -> f32 -> #left | #right)
-      -> [n](fragment V.t, fragment V.t, fragment V.t)
       -> (ne: (target, f32))
-      -> ([h][w]target, [h][w]f32)
-      -> ([h][w]target, [h][w]f32)
+      -> [h][w](target, f32)
+      -> [n](fragment V.t, fragment V.t, fragment V.t)
+      -> [h][w](target, f32)
   }
 
 -- | immediate triangle rasterizer
@@ -141,9 +140,9 @@ module mk_imm_triangle_rasterizer : mk_triangle_rasterizer_spec = \(V: VaryingSp
     def rasterize 'target [n] [h] [w]
                   (plot: (fragment V.t -> target))
                   (depth_cmp: f32 -> f32 -> #left | #right)
-                  (frags: [n](fragment V.t, fragment V.t, fragment V.t))
                   (ne: (target, f32))
-                  (target_buf: [h][w]target, depth_buf: [h][w]f32) : ([h][w]target, [h][w]f32) =
+                  (dest: [h][w](target, f32))
+                  (frags: [n](fragment V.t, fragment V.t, fragment V.t)) : [h][w](target, f32) =
       let (is, target_values, depth_values) =
         frags
         |> map (\tri -> (round_fragment tri.0, round_fragment tri.1, round_fragment tri.2))
@@ -153,12 +152,8 @@ module mk_imm_triangle_rasterizer : mk_triangle_rasterizer_spec = \(V: VaryingSp
         |> map (plot_fragment plot)
         |> unzip3
       let as = zip target_values depth_values
-      let dest = zip (flatten target_buf) (flatten depth_buf) |> unflatten
       let cmp = (\f0 f1 -> match depth_cmp f0.1 f1.1 case #left -> f0 case #right -> f1)
       in reduce_by_index_2d (copy dest) cmp ne is as
-         |> flatten
-         |> unzip
-         |> (\(x, y) -> (unflatten x, unflatten y))
   }
 
 -- immediate triangle rasterizer for testing purposes. can use the REPL for this
@@ -176,8 +171,7 @@ module immediate_triangle_rasterizer_test = {
   local module M = mk_imm_triangle_rasterizer (V)
 
   def rasterize_triangle_imm_test [n] (h: i64) (w: i64) (vs: [n]((f32, f32), (f32, f32), (f32, f32))) : [h][w]i32 =
-    let target_buf = replicate h (replicate w false)
-    let depth_buf = replicate h (replicate w (-f32.inf))
+    let dest = replicate h (replicate w (false, -f32.inf))
     let in_fb v = 0 <= v.0 && v.0 < f32.i64 w && 0 <= v.1 && v.1 < f32.i64 h
     let frags =
       vs
@@ -189,7 +183,12 @@ module immediate_triangle_rasterizer_test = {
                 ))
     let plot = (\(f: fragment bool) -> f.attr)
     let depth_cmp (x: f32) (y: f32) = if x > y then #left else #right
-    in M.rasterize plot depth_cmp frags (false, -f32.inf) (target_buf, depth_buf) |> (.0)
+    let (target_buf, _) =
+      M.rasterize plot depth_cmp (false, -f32.inf) dest frags
+      |> flatten
+      |> unzip
+    in target_buf
+       |> unflatten
        |> map (map i32.bool)
 }
 

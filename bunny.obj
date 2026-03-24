@@ -1,6 +1,6 @@
 # Blender 4.4.3
 # www.blender.org
-mtllib stanford_bunny.mtl
+mtllib bunny.mtl
 o bunny
 v 0.115898 0.303196 0.217544
 v -0.667192 0.525015 0.296561
