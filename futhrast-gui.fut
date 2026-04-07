@@ -37,7 +37,6 @@ module lys_text_content = {
     ++ "b: bunny\n"
     ++ "m: monkey\n"
     ++ "h: african head\n"
-    ++ "r: dragon\n"
     ++ "\n"
     ++ "0: snap into position\n"
     ++ "1|2|3: point|line|triangle\n"
