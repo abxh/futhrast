@@ -152,7 +152,7 @@ module cat_bitmask (L: bitmask) (R: bitmask) : bitmask = {
     let l_size = L.size l
     in if i < l_size
        then L.find_ith_set_bit l i
-       else R.find_ith_set_bit r (i - l_size)
+       else R.find_ith_set_bit r (i - l_size) + L.num_bits
 
   def from_pred (f: i64 -> bool) : t =
     let l_pred i = f i
