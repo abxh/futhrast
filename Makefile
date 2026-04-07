@@ -5,15 +5,15 @@ BUILD_DIR := build
 
 export PROGNAME
 
-NOWARN_CFLAGS ?= -std=gnu11
-CFLAGS ?= -std=gnu11 -Wall -Wextra -pedantic
-CXXFLAGS ?= -std=c++17 -Wall -Wextra -pedantic
+# NOWARN_CFLAGS ?= -std=gnu11
+# CFLAGS ?= -std=gnu11 -Wall -Wextra -pedantic
+# CXXFLAGS ?= -std=c++17 -Wall -Wextra -pedantic
 
 # NOWARN_CFLAGS ?=  -O
 # CFLAGS += -O
 # CXXFLAGS += -O
 
-NOWARN_CFLAGS += -O3 -march=native -flto=auto -ffast-math
+NOWARN_CFLAGS ?= -O3 -march=native -flto=auto -ffast-math
 CFLAGS += -O3 -march=native -flto=auto -ffast-math
 CXXFLAGS += -O3 -march=native -flto=auto -ffast-math
 

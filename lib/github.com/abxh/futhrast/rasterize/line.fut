@@ -28,6 +28,9 @@ module LineRasterizer : LineRasterizerSpec = \(V: VaryingSpec) ->
     module V = VaryingExtensions (V)
     module F32 = VaryingExtensions (f32)
 
+    type fragment_generic 'a 'varying =
+      {pos: {x: a, y: a}, depth: f32, Z_inv: f32, attr: varying}
+
     local
     type line = (fragment_generic i32 V.t, fragment_generic i32 V.t)
 
@@ -103,7 +106,7 @@ module LineRasterizer : LineRasterizerSpec = \(V: VaryingSpec) ->
         |> map (plot_fragment plot)
         |> unzip3
       let as = zip target_values depth_values
-      let cmp = (\f0 f1 -> match depth_cmp f0.1 f1.1 case #left -> f0 case #right -> f1)
+      let cmp f0 f1 = match depth_cmp f0.1 f1.1 case #left -> f0 case #right -> f1
       in reduce_by_index_2d (copy dest) cmp ne is as
   }
 
@@ -123,10 +126,8 @@ module LineRasterizerTest = {
 
   def rasterize_line_demo [n] (h: i64) (w: i64) (vs: [n]((f32, f32), (f32, f32))) : [h][w]i32 =
     let dest = replicate h (replicate w (false, -f32.inf))
-    let in_fb v = 0 <= v.0 && v.0 < f32.i64 w && 0 <= v.1 && v.1 < f32.i64 h
     let frags =
       vs
-      |> filter (\(v0, v1) -> in_fb v0 && in_fb v1)
       |> map (\(f0, f1) ->
                 ( {pos = {x = f0.0, y = f0.1}, depth = 1, Z_inv = 1, attr = true}
                 , {pos = {x = f1.0, y = f1.1}, depth = 1, Z_inv = 1, attr = true}

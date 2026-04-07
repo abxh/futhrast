@@ -33,6 +33,9 @@ module TriangleImmRasterizer : TriangleRasterizerSpec = \(V: VaryingSpec) ->
 
     local module F32 = VaryingExtensions (f32)
 
+    type fragment_generic 'a 'varying =
+      {pos: {x: a, y: a}, depth: f32, Z_inv: f32, attr: varying}
+
     local
     type triangle = (fragment_generic i32 V.t, fragment_generic i32 V.t, fragment_generic i32 V.t)
 
@@ -155,7 +158,7 @@ module TriangleImmRasterizer : TriangleRasterizerSpec = \(V: VaryingSpec) ->
       in reduce_by_index_2d (copy dest) cmp ne is as
   }
 
--- immediate triangle rasterizer for testing purposes. can use the REPL for this
+-- | immediate triangle rasterizer for testing purposes. can use the REPL for this
 module TriangleImmRasterizerTest = {
   local
   module V : VaryingSpec with t = bool = {

@@ -7,6 +7,7 @@ import "math/vec"
 import "rasterize/point"
 import "rasterize/line"
 import "rasterize/triangle_imm"
+import "rasterize/triangle_tiled"
 
 -- | configuration options
 module type ConfigSpec = {
@@ -69,7 +70,7 @@ module RenderSetup (C: ConfigSpec) : RenderSetupSpec = \(V: VaryingSpec) ->
   {
     local module Point = PointRasterizer V
     local module Line = LineRasterizer V
-    local module Triangle = TriangleImmRasterizer V
+    local module Triangle = TriangleTiledRasterizer V
 
     local
     def map_screen_to_window 'varying
@@ -118,30 +119,30 @@ module RenderSetup (C: ConfigSpec) : RenderSetupSpec = \(V: VaryingSpec) ->
                (on_frag: fragment_shader uniform V.t target)
                (ne: target)
                (fb: [h][w](target, f32)) : [h][w](target, f32) =
-      let (stw_f, ne) =
-        let stw_f = map_screen_to_window {h = length fb, w = length fb[0]}
+      let (stw, ne) =
+        let stw = map_screen_to_window {h = length fb, w = length fb[0]}
         let ne = if C.depth_type == #reversed_z then (ne, -f32.inf) else (ne, f32.inf)
-        in (stw_f, ne)
+        in (stw, ne)
       let vs = map (on_vert u) d.vertices
       let vs = map (\i -> vs[i]) d.indices
       in match d.primitive_type
          case #points ->
            vs
            |> map (\(v0) -> proj v0)
-           |> map (\(v0) -> stw_f v0)
+           |> map (\(v0) -> stw v0)
            |> Point.rasterize (on_frag u) depth_cmp ne fb
          case #lines ->
            (iota (length vs / 2))
            |> map (\i -> (vs[2 * i], vs[2 * i + 1]))
            |> map (\(v0, v1) -> (proj v0, proj v1))
-           |> map (\(v0, v1) -> (stw_f v0, stw_f v1))
+           |> map (\(v0, v1) -> (stw v0, stw v1))
            |> Line.rasterize (on_frag u) depth_cmp ne fb
          case #triangles ->
            (iota (length vs / 3))
            |> map (\i -> (vs[3 * i], vs[3 * i + 1], vs[3 * i + 2]))
            |> map (\(v0, v1, v2) -> (proj v0, proj v1, proj v2))
-           |> map (\(v0, v1, v2) -> (stw_f v0, stw_f v1, stw_f v2))
-           |> filter winding_order_check
+           |> map (\(v0, v1, v2) -> (stw v0, stw v1, stw v2))
+           |> filter (winding_order_check)
            |> Triangle.rasterize (on_frag u) depth_cmp ne fb
 
     def render_wireframe 'uniform 'vertex 'target [w] [h]
@@ -151,10 +152,10 @@ module RenderSetup (C: ConfigSpec) : RenderSetupSpec = \(V: VaryingSpec) ->
                          (on_frag: fragment_shader uniform V.t target)
                          (ne: target)
                          (fb: [h][w](target, f32)) : [h][w](target, f32) =
-      let (stw_f, ne) =
-        let stw_f = map_screen_to_window {h = length fb, w = length fb[0]}
+      let (stw, ne) =
+        let stw = map_screen_to_window {h = length fb, w = length fb[0]}
         let ne = if C.depth_type == #reversed_z then (ne, -f32.inf) else (ne, f32.inf)
-        in (stw_f, ne)
+        in (stw, ne)
       let vs = map (on_vert u) d.vertices
       let vs = map (\i -> vs[i]) d.indices
       in match d.primitive_type
@@ -163,7 +164,7 @@ module RenderSetup (C: ConfigSpec) : RenderSetupSpec = \(V: VaryingSpec) ->
            |> map (\i -> (vs[3 * i], vs[3 * i + 1], vs[3 * i + 2]))
            |> expand (\_ -> 3) (\t j -> if j == 0 then (t.0, t.1) else if j == 1 then (t.1, t.2) else (t.2, t.0))
            |> map (\(v0, v1) -> (proj v0, proj v1))
-           |> map (\(v0, v1) -> (stw_f v0, stw_f v1))
+           |> map (\(v0, v1) -> (stw v0, stw v1))
            |> Line.rasterize (on_frag u) depth_cmp ne fb
          case _ -> assert false fb
   }

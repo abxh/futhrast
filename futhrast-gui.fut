@@ -13,12 +13,12 @@ type~ lys_state =
   , zoom: f32
   , angle: f32
   , angle_delta: f32
-  , verts0: [](f32, f32, f32)
-  , verts1: [](f32, f32, f32)
-  , verts2: [](f32, f32, f32)
-  , inds0: []i64
-  , inds1: []i64
-  , inds2: []i64
+  , verts_bunny: [](f32, f32, f32)
+  , verts_monkey: [](f32, f32, f32)
+  , verts_head: [](f32, f32, f32)
+  , inds_bunny: []i64
+  , inds_monkey: []i64
+  , inds_head: []i64
   , render_model: #bunny | #monkey | #head
   , render_kind: #points | #lines | #triangles
   }
@@ -32,6 +32,7 @@ module lys_text_content = {
     ++ "b: bunny\n"
     ++ "m: monkey\n"
     ++ "h: african head\n"
+    ++ "r: dragon\n"
     ++ "\n"
     ++ "0: snap into position\n"
     ++ "1|2|3: point|line|triangle\n"
@@ -57,22 +58,22 @@ module lys_file = {
   def load_obj_vertex_indices [n] (i: i64) (is: [n]i64) (s: lys_state) : lys_state =
     match i
     case 0 ->
-      s with inds0 = is
+      s with inds_bunny = is
     case 1 ->
-      s with inds1 = is
+      s with inds_monkey = is
     case 2 ->
-      s with inds2 = is
+      s with inds_head = is
     case _ ->
       s
 
   def load_obj_vertices [n] (i: i64) (vs: [n](f32, f32, f32)) (s: lys_state) : lys_state =
     match i
     case 0 ->
-      s with verts0 = vs
+      s with verts_bunny = vs
     case 1 ->
-      s with verts1 = vs
+      s with verts_monkey = vs
     case 2 ->
-      s with verts2 = vs
+      s with verts_head = vs
     case _ ->
       s
 
@@ -96,12 +97,12 @@ module lys : lys with text_content = lys_text_content.text_content = {
     , pos_delta = (0, 0, 0)
     , angle = 0
     , angle_delta = 0
-    , inds0 = replicate 0 (-1)
-    , inds1 = replicate 0 (-1)
-    , inds2 = replicate 0 (-1)
-    , verts0 = replicate 0 (0, 0, 0)
-    , verts1 = replicate 0 (0, 0, 0)
-    , verts2 = replicate 0 (0, 0, 0)
+    , inds_bunny = replicate 0 (-1)
+    , inds_monkey = replicate 0 (-1)
+    , inds_head = replicate 0 (-1)
+    , verts_bunny = replicate 0 (0, 0, 0)
+    , verts_monkey = replicate 0 (0, 0, 0)
+    , verts_head = replicate 0 (0, 0, 0)
     , render_model = #bunny
     , render_kind = #triangles
     }
@@ -194,9 +195,8 @@ module lys : lys with text_content = lys_text_content.text_content = {
     let sin_a = f32.sin angle
     let x' = v.x * cos_a + v.z * sin_a
     let z' = -v.x * sin_a + v.z * cos_a
-    let z_norm = (z' + 1) * 0.5
     in { pos = {x = (x' * s.zoom) + s.pos.0, y = (v.y * s.zoom) + s.pos.1, z = z', w = 1}
-       , attr = argb.scale argb.white z_norm
+       , attr = argb.scale argb.white ((z' + 1) * 0.5)
        }
 
   local
@@ -206,9 +206,9 @@ module lys : lys with text_content = lys_text_content.text_content = {
   def render (s: state) : [][]argb.colour =
     let (verts, inds) =
       match s.render_model
-      case #bunny -> (s.verts0, s.inds0)
-      case #monkey -> (s.verts1, s.inds1)
-      case #head -> (s.verts2, s.inds2)
+      case #bunny -> (s.verts_bunny, s.inds_bunny)
+      case #monkey -> (s.verts_monkey, s.inds_monkey)
+      case #head -> (s.verts_head, s.inds_head)
     in match s.render_kind
        case #points ->
          R.init {w = s.w, h = s.h} argb.black
@@ -244,14 +244,6 @@ module lys : lys with text_content = lys_text_content.text_content = {
                      on_vertex
                      on_fragment
                      argb.black
-         |> R.render_wireframe s
-                               { primitive_type = #triangles
-                               , vertices = verts
-                               , indices = inds
-                               }
-                               on_vertex
-                               on_fragment
-                               argb.black
          |> R.unpack
          |> (.0)
 }

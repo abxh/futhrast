@@ -1,8 +1,7 @@
 package github.com/abxh/futhrast
 
 require {
+  github.com/abxh/lys 0.0.0-20260330121935+9a790092e1036c487d72287bb61a37f453f8aca5 #9a790092e1036c487d72287bb61a37f453f8aca5
   github.com/diku-dk/segmented 0.4.4 #9653ba17581771f0641d1f3f9618da6d9bc633de
   github.com/diku-dk/sorts 0.6.1 #c14558b77a63526e96c6e5d71cba3ff0ccc918f5
-  github.com/abxh/lys 0.0.0-20260315015644+14c0961688bf666d70462baa429fa4de336f3bc8
-  github.com/diku-dk/containers 0.10.0 #d4dfa326b2af1702b12486b5d60f9b3b1320881f
 }

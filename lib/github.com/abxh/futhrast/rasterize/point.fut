@@ -34,7 +34,7 @@ module PointRasterizer : PointRasterizerSpec = \(V: VaryingSpec) ->
         |> map (plot_fragment plot)
         |> unzip3
       let as = zip target_values depth_values
-      let cmp = (\f0 f1 -> match depth_cmp f0.1 f1.1 case #left -> f0 case #right -> f1)
+      let cmp f0 f1 = match depth_cmp f0.1 f1.1 case #left -> f0 case #right -> f1
       in reduce_by_index_2d (copy dest) cmp ne is as
   }
 
