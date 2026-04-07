@@ -3,6 +3,8 @@ import "lib/github.com/abxh/futhrast/types"
 import "lib/github.com/abxh/futhrast/setup"
 import "lib/github.com/abxh/futhrast/rasterize/triangle_imm"
 import "lib/github.com/abxh/futhrast/math/vec"
+import "lib/github.com/abxh/futhrast/rasterize/triangle_imm"
+import "lib/github.com/abxh/futhrast/rasterize/triangle_tiled"
 import "lib/github.com/diku-dk/segmented/segmented"
 
 type~ lys_state =
@@ -21,13 +23,16 @@ type~ lys_state =
   , inds_head: []i64
   , render_model: #bunny | #monkey | #head
   , render_kind: #points | #lines | #triangles
+  , triangle_rasterizer_mode: #immediate | #tiled
   }
 
 module lys_text_content = {
-  type text_content = (i64)
+  type text_content = (i64, i64)
 
   def text_format () =
     "FPS: %ld\n"
+    ++ "triangle rasterizer mode: %[immediate|tiled]\n"
+    ++ "t: switch mode\n"
     ++ "\n"
     ++ "b: bunny\n"
     ++ "m: monkey\n"
@@ -40,8 +45,12 @@ module lys_text_content = {
     ++ "+|-: zoom\n"
     ++ "left|right: rotation\n"
 
-  def text_content (render_duration: f32) (_: lys_state) : text_content =
-    (i64.f32 render_duration)
+  def text_content (render_duration: f32) (s: lys_state) : text_content =
+    let tr_mode =
+      match s.triangle_rasterizer_mode
+      case #immediate -> 0
+      case #tiled -> 1
+    in (i64.f32 render_duration, tr_mode)
 
   def text_colour = const argb.white
 }
@@ -105,6 +114,7 @@ module lys : lys with text_content = lys_text_content.text_content = {
     , verts_head = replicate 0 (0, 0, 0)
     , render_model = #bunny
     , render_kind = #triangles
+    , triangle_rasterizer_mode = #tiled
     }
 
   def resize (h: i64) (w: i64) (s: state) =
@@ -123,6 +133,10 @@ module lys : lys with text_content = lys_text_content.text_content = {
     then s with render_model = #monkey
     else if key == SDLK_h
     then s with render_model = #head
+    else if key == SDLK_t
+    then s with triangle_rasterizer_mode = match s.triangle_rasterizer_mode
+           case #tiled -> #immediate
+           case #immediate -> #tiled
     else if key == SDLK_a
     then s with pos_delta.0 = -1
     else if key == SDLK_d
@@ -184,7 +198,8 @@ module lys : lys with text_content = lys_text_content.text_content = {
     def depth_type : #normal_z | #reversed_z = #reversed_z
   }
 
-  local module R = RenderSetup Config Varying
+  local module R = RenderSetup Config TriangleImmRasterizer Varying
+  local module RT = RenderSetup Config TriangleTiledRasterizer Varying
 
   local
   def on_vertex (s: state) (v: (f32, f32, f32)) : vertex_out Varying.t =
@@ -235,15 +250,29 @@ module lys : lys with text_content = lys_text_content.text_content = {
          |> R.unpack
          |> (.0)
        case #triangles ->
-         R.init {w = s.w, h = s.h} argb.black
-         |> R.render s
-                     { primitive_type = #triangles
-                     , vertices = verts
-                     , indices = inds
-                     }
-                     on_vertex
-                     on_fragment
-                     argb.black
-         |> R.unpack
-         |> (.0)
+         match s.triangle_rasterizer_mode
+         case #immediate ->
+           R.init {w = s.w, h = s.h} (argb.gray 0.4)
+           |> R.render s
+                       { primitive_type = #triangles
+                       , vertices = verts
+                       , indices = inds
+                       }
+                       on_vertex
+                       on_fragment
+                       argb.black
+           |> R.unpack
+           |> (.0)
+         case #tiled ->
+           RT.init {w = s.w, h = s.h} (argb.gray 0.2)
+           |> RT.render s
+                        { primitive_type = #triangles
+                        , vertices = verts
+                        , indices = inds
+                        }
+                        on_vertex
+                        on_fragment
+                        argb.black
+           |> RT.unpack
+           |> (.0)
 }
