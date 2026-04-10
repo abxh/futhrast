@@ -9,20 +9,24 @@ export PROGNAME
 # CFLAGS ?= -std=gnu11 -Wall -Wextra -pedantic
 # CXXFLAGS ?= -std=c++17 -Wall -Wextra -pedantic
 
-NOWARN_CFLAGS ?=  -O
-CFLAGS += -O
-CXXFLAGS += -O
+# NOWARN_CFLAGS ?= -O
+# CFLAGS += -O
+# CXXFLAGS += -O 
 
-# NOWARN_CFLAGS ?= -O3 -march=native -flto=auto -ffast-math
-# CFLAGS += -O3 -march=native -flto=auto -ffast-math
-# CXXFLAGS += -O3 -march=native -flto=auto -ffast-math
+# NOWARN_CFLAGS += -I/opt/rocm/include -L/opt/rocm/lib
+# CFLAGS += -I/opt/rocm/include -L/opt/rocm/lib
+# CXXFLAGS += -I/opt/rocm/include -L/opt/rocm/lib
+
+NOWARN_CFLAGS ?= -O3 -march=native -flto=auto -ffast-math
+CFLAGS += -O3 -march=native -flto=auto -ffast-math
+CXXFLAGS += -O3 -march=native -flto=auto -ffast-math
 
 # enable ubsan sanitizer. may comment below chunk out.
 # CFLAGS += -fsanitize=undefined
 # CXXFLAGS += -fsanitize=undefined
 # LDFLAGS += -fsanitize=undefined
 
-LYS_BACKEND := opencl
+LYS_BACKEND := multicore
 
 export NOWARN_CFLAGS CFLAGS CXXFLAGS LDFLAGS LYS_BACKEND
 
