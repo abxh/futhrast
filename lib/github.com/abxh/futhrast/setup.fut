@@ -33,7 +33,7 @@ module type RenderSetupSpec =
   (V: VaryingSpec)
   -> {
     -- initialize a framebuffer
-    val init 'target : {w: i64, h: i64} -> (ne: target) -> [][](target, f32)
+    val init 'target : {w: i64, h: i64} -> (default: target) -> [][](target, f32)
 
     -- unpack framebuffer
     val unpack [w] [h] 'target : [h][w](target, f32) -> ([h][w]target, [h][w]f32)
@@ -66,7 +66,7 @@ module type RenderSetupSpec =
   }
 
 -- | rendering setup implementation
-module RenderSetup (C: ConfigSpec) (T: TriangleRasterizerSpec) : RenderSetupSpec = \(V: VaryingSpec) ->
+module CustomRenderSetup (T: TriangleRasterizerSpec) (C: ConfigSpec) : RenderSetupSpec = \(V: VaryingSpec) ->
   {
     local module Point = PointRasterizer V
     local module Line = LineRasterizer V
@@ -101,8 +101,8 @@ module RenderSetup (C: ConfigSpec) (T: TriangleRasterizerSpec) : RenderSetupSpec
 
     def init 'target
              {w = w: i64, h = h: i64}
-             (ne: target) : [][](target, f32) =
-      let ne = if C.depth_type == #reversed_z then (ne, -f32.inf) else (ne, f32.inf)
+             (default: target) : [][](target, f32) =
+      let ne = if C.depth_type == #reversed_z then (default, -f32.inf) else (default, f32.inf)
       in replicate h (replicate w (ne))
 
     def unpack [w] [h] 'target (fb: [h][w](target, f32)) : ([h][w]target, [h][w]f32) =
@@ -168,5 +168,8 @@ module RenderSetup (C: ConfigSpec) (T: TriangleRasterizerSpec) : RenderSetupSpec
            |> Line.rasterize (on_frag u) depth_cmp ne fb
          case _ -> assert false fb
   }
+
+-- | Default renderer setup
+module RenderSetup = CustomRenderSetup TriangleImmRasterizer
 
 -- todo: cull/clip primitives.
