@@ -50,11 +50,11 @@ module TriangleTiledRasterizer : TriangleRasterizerSpec = \(V: VaryingSpec) ->
       , ymax: a
       }
 
-    module coarse_mask = bitmask_64
-    module fine_mask = bitmask_256
+    module coarse_mask = bitmask_256
+    module fine_mask = bitmask_64
 
     local def bin_size : i64 = 128i64
-    local def fine_size : i64 = 16i64
+    local def fine_size : i64 = 8i64
     local def coarse_size : i64 = bin_size / fine_size
 
     def barycentric = F32.barycentric
@@ -119,105 +119,73 @@ module TriangleTiledRasterizer : TriangleRasterizerSpec = \(V: VaryingSpec) ->
     def bbox_overlaps (a: bbox i64) (b: bbox i64) =
       !(a.xmax <= b.xmin || a.xmin >= b.xmax || a.ymax <= b.ymin || a.ymin >= b.ymax)
 
-    def tri_overlaps_bbox (bbox: bbox i64) (tri_bbox: bbox i64) ((f0, f1, f2): triangle) =
-      if !bbox_overlaps bbox tri_bbox
-      then false
-      else let p = (f0.pos, f1.pos, f2.pos)
-           let w0 = calc_wcoeffs p {x = i32.i64 bbox.xmin, y = i32.i64 bbox.ymin}
-           let w1 = calc_wcoeffs p {x = i32.i64 bbox.xmin, y = i32.i64 bbox.ymax}
-           let w2 = calc_wcoeffs p {x = i32.i64 bbox.xmax, y = i32.i64 bbox.ymin}
-           let w3 = calc_wcoeffs p {x = i32.i64 bbox.xmax, y = i32.i64 bbox.ymax}
-           let is_outside proj = proj w0 < 0 && proj w1 < 0 && proj w2 < 0 && proj w3 < 0
-           in !(is_outside (.x) || is_outside (.y) || is_outside (.z))
+    def tri_overlaps_bbox (bbox: bbox i64) ((f0, f1, f2): triangle) =
+      let p = (f0.pos, f1.pos, f2.pos)
+      let w0 = calc_wcoeffs p {x = i32.i64 bbox.xmin, y = i32.i64 bbox.ymin}
+      let w1 = calc_wcoeffs p {x = i32.i64 bbox.xmin, y = i32.i64 bbox.ymax}
+      let w2 = calc_wcoeffs p {x = i32.i64 bbox.xmax, y = i32.i64 bbox.ymin}
+      let w3 = calc_wcoeffs p {x = i32.i64 bbox.xmax, y = i32.i64 bbox.ymax}
+      let is_outside proj = proj w0 < 0 && proj w1 < 0 && proj w2 < 0 && proj w3 < 0
+      in !(is_outside (.x) || is_outside (.y) || is_outside (.z))
 
-    def fine_rasterize [n] 'target [h] [w]
-                       (plot: (fragment V.t -> target))
-                       (depth_cmp: f32 -> f32 -> #left | #right)
-                       (ne: (target, f32))
-                       (dest: [h][w](target, f32))
+    def fine_rasterize [n]
+                       {h = _: i64, w = w: i64}
                        (tris: []triangle)
-                       ((tile_ids, tri_indices): ([n]i64, [n]i64)) : [h][w](target, f32) =
-      let cmp = (\f0 f1 -> match depth_cmp f0.1 f1.1 case #left -> f0 case #right -> f1)
+                       ((tile_ids, tri_indices): ([n]i64, [n]i64)) =
       let bins_w = w `div_ceil` bin_size
       let tiles_per_bin =
         assert (fine_size * fine_size == fine_mask.num_bits) (coarse_size * coarse_size)
-      let flags = map2 (!=) tile_ids (rotate (-1) tile_ids)
-      let uniques = segmented_reduce i64.max (-1) flags tile_ids
-      let counts = segmented_reduce (+) 0 flags (replicate n 1)
-      let offsets = counts |> exscan (+) 0
-      let f tile_id =
-        let bin_index = tile_id / tiles_per_bin
-        let tile_index = tile_id %% tiles_per_bin
-        let bin_x = bin_index %% bins_w
-        let bin_y = bin_index / bins_w
-        let tile_x = tile_index %% coarse_size
-        let tile_y = tile_index / coarse_size
-        let f pixel_y pixel_x =
-          let x = bin_x * bin_size + tile_x * fine_size + pixel_x
-          let y = bin_y * bin_size + tile_y * fine_size + pixel_y
-          in (y, x)
-        in tabulate_2d fine_size fine_size f |> flatten
-      let is = uniques |> map f |> flatten
-      in zip uniques (indices uniques)
-         |> map (\(tile_id, i) ->
+      in zip tile_ids tri_indices
+         |> map (\(tile_id, tri_index) ->
                    let bin_index = tile_id / tiles_per_bin
                    let tile_index = tile_id %% tiles_per_bin
                    let bin_xmin = (bin_index %% bins_w) * bin_size
                    let bin_ymin = (bin_index / bins_w) * bin_size
                    let tile_xmin = (tile_index %% coarse_size) * fine_size + bin_xmin
                    let tile_ymin = (tile_index / coarse_size) * fine_size + bin_ymin
-                   let tile =
-                     tabulate_2d fine_size fine_size (\dy dx ->
-                                                        let y = tile_ymin + dy
-                                                        let x = tile_xmin + dx
-                                                        in if y < h && x < w then dest[y, x] else ne)
-                   let (is, target_values, depth_values) =
-                     tri_indices
-                     |> drop offsets[i]
-                     |> take counts[i]
-                     |> map (\tri_index ->
-                               let (f0, f1, f2) = tris[tri_index]
-                               let verts = (f0.pos, f1.pos, f2.pos)
-                               let g pixel_index =
-                                 let y = tile_ymin + (pixel_index / fine_size) |> i32.i64
-                                 let x = tile_xmin + (pixel_index %% fine_size) |> i32.i64
-                                 let w = calc_wcoeffs verts {x, y}
-                                 in w.x >= 0 && w.y >= 0 && w.z >= 0
-                               let mask = fine_mask.from_pred g
-                               in (tri_index, mask))
-                     |> expand (\((_, mask)) -> fine_mask.size mask)
-                               (\((tri_index, mask)) set_pixel_index ->
-                                  let pixel_index = fine_mask.find_ith_set_bit mask set_pixel_index
-                                  let pixel_x = pixel_index %% fine_size
-                                  let pixel_y = pixel_index / fine_size
-                                  let x = pixel_x + tile_xmin
-                                  let y = pixel_y + tile_ymin
-                                  let (f0, f1, f2) = tris[tri_index]
-                                  let verts = (f0.pos, f1.pos, f2.pos)
-                                  let area_2 = calc_signed_tri_area_2 (f0, f1, f2)
-                                  let (w0, w1, w2) = calc_wcoeffs verts {x = i32.i64 x, y = i32.i64 y} |> vec3i32.to_tuple
-                                  let (w0, w1, w2) = (f32.i32 w0 / f32.i32 area_2, f32.i32 w1 / f32.i32 area_2, f32.i32 w2 / f32.i32 area_2)
-                                  let w = (w0, w1, w2)
-                                  let pos = {x = f32.i64 x, y = f32.i64 y}
-                                  let Z_inv = barycentric f0.Z_inv f1.Z_inv f2.Z_inv w
-                                  let depth = barycentric_affine Z_inv (f0.depth, f0.Z_inv) (f1.depth, f1.Z_inv) (f2.depth, f2.Z_inv) w
-                                  let attr = barycentric_affine_attr Z_inv (f0.attr, f0.Z_inv) (f1.attr, f1.Z_inv) (f2.attr, f2.Z_inv) w
-                                  in ((pixel_y, pixel_x), plot {pos, Z_inv, depth, attr}, depth))
-                     |> unzip3
-                   let as = zip target_values depth_values
-                   in reduce_by_index_2d tile cmp ne is as |> flatten)
-         |> flatten
-         |> scatter_2d (copy dest) is
+                   let (f0, f1, f2) = tris[tri_index]
+                   let verts = (f0.pos, f1.pos, f2.pos)
+                   let g pixel_index =
+                     let y = tile_ymin + (pixel_index / fine_size) |> i32.i64
+                     let x = tile_xmin + (pixel_index %% fine_size) |> i32.i64
+                     let w = calc_wcoeffs verts {x, y}
+                     in w.x >= 0 && w.y >= 0 && w.z >= 0
+                   let mask = fine_mask.from_pred g
+                   in (tile_id, tri_index, mask))
+         |> expand (\((_, _, mask)) -> fine_mask.size mask)
+                   (\((tile_id, tri_index, mask)) set_pixel_index ->
+                      let bin_index = tile_id / tiles_per_bin
+                      let tile_index = tile_id %% tiles_per_bin
+                      let bin_xmin = (bin_index %% bins_w) * bin_size
+                      let bin_ymin = (bin_index / bins_w) * bin_size
+                      let tile_xmin = (tile_index %% coarse_size) * fine_size + bin_xmin
+                      let tile_ymin = (tile_index / coarse_size) * fine_size + bin_ymin
+                      let pixel_index = fine_mask.find_ith_set_bit mask set_pixel_index
+                      let pixel_x = pixel_index %% fine_size
+                      let pixel_y = pixel_index / fine_size
+                      let x = pixel_x + tile_xmin
+                      let y = pixel_y + tile_ymin
+                      let (f0, f1, f2) = tris[tri_index]
+                      let verts = (f0.pos, f1.pos, f2.pos)
+                      let area_2 = calc_signed_tri_area_2 (f0, f1, f2)
+                      let (w0, w1, w2) = calc_wcoeffs verts {x = i32.i64 x, y = i32.i64 y} |> vec3i32.to_tuple
+                      let (w0, w1, w2) = (f32.i32 w0 / f32.i32 area_2, f32.i32 w1 / f32.i32 area_2, f32.i32 w2 / f32.i32 area_2)
+                      let w = (w0, w1, w2)
+                      let pos = {x = f32.i64 x, y = f32.i64 y}
+                      let Z_inv = barycentric f0.Z_inv f1.Z_inv f2.Z_inv w
+                      let depth = barycentric_affine Z_inv (f0.depth, f0.Z_inv) (f1.depth, f1.Z_inv) (f2.depth, f2.Z_inv) w
+                      let attr = barycentric_affine_attr Z_inv (f0.attr, f0.Z_inv) (f1.attr, f1.Z_inv) (f2.attr, f2.Z_inv) w
+                      in (tile_id, pixel_index, {pos, Z_inv, depth, attr}))
 
     def coarse_rasterize [n] {h = h: i64, w = w: i64} (tris: []triangle) ((bin_indices, tri_indices): ([n]i64, [n]i64)) =
       let fb_bbox = {xmin = 0, ymin = 0, xmax = w, ymax = h}
       let bins_w = w `div_ceil` bin_size
-      let bins_h = h `div_ceil` bin_size
       let tiles_per_bin =
         assert (coarse_size * coarse_size == coarse_mask.num_bits) (coarse_size * coarse_size)
-      let num_tiles = bins_w * bins_h * tiles_per_bin
       in zip bin_indices tri_indices
          |> map (\(bin_index, tri_index) ->
+                   let tri = tris[tri_index]
+                   let tri_bbox = calc_tri_bbox tri
                    let bin_xmin = (bin_index %% bins_w) * bin_size
                    let bin_ymin = (bin_index / bins_w) * bin_size
                    let f (tile_index: i64) =
@@ -227,10 +195,9 @@ module TriangleTiledRasterizer : TriangleRasterizerSpec = \(V: VaryingSpec) ->
                        let xmax = xmin + fine_size
                        let ymax = ymin + fine_size
                        in {xmin, ymin, xmax, ymax}
-                     in if !bbox_overlaps tile_bbox fb_bbox
+                     in if !bbox_overlaps tile_bbox fb_bbox || !bbox_overlaps tile_bbox tri_bbox
                         then false
-                        else let tri_bbox = calc_tri_bbox tris[tri_index]
-                             in tri_overlaps_bbox tile_bbox tri_bbox tris[tri_index]
+                        else tri_overlaps_bbox tile_bbox tri
                    let mask = coarse_mask.from_pred f
                    in (bin_index, mask))
          |> zip (iota n)
@@ -239,16 +206,14 @@ module TriangleTiledRasterizer : TriangleRasterizerSpec = \(V: VaryingSpec) ->
                       let tile_index = coarse_mask.find_ith_set_bit mask set_tile_index
                       let tile_id = bin_index * tiles_per_bin + tile_index
                       in (tile_id, tri_indices[tri_index]))
-         |> radix_sort_by_key (.0) (i32.i64 (ilog2 num_tiles)) i64.get_bit
          |> unzip
 
     def bin_rasterize {h = h: i64, w = w: i64} (tris: []triangle) =
       let bins_h = h `div_ceil` bin_size
       let bins_w = w `div_ceil` bin_size
-      in tris
-         |> zip (indices tris)
-         |> map (\(tri_index, tri) ->
-                   let tri_bbox = calc_tri_bbox tri
+      in indices tris
+         |> map (\tri_index ->
+                   let tri_bbox = calc_tri_bbox tris[tri_index]
                    let xmin = (tri_bbox.xmin / bin_size) `i64.max` 0
                    let ymin = (tri_bbox.ymin / bin_size) `i64.max` 0
                    let xmax = (tri_bbox.xmax `div_ceil` bin_size) `i64.min` bins_w
@@ -266,6 +231,14 @@ module TriangleTiledRasterizer : TriangleRasterizerSpec = \(V: VaryingSpec) ->
                       let y = bbox.ymin + dy
                       let bin_index = y * bins_w + x
                       in (bin_index, tri_index))
+         |> filter (\(bin_index, tri_index) ->
+                      let bin_bbox =
+                        let xmin = (bin_index %% bins_w) * bin_size
+                        let ymin = (bin_index / bins_w) * bin_size
+                        let xmax = xmin + bin_size
+                        let ymax = ymin + bin_size
+                        in {xmin, ymin, xmax, ymax}
+                      in tri_overlaps_bbox bin_bbox tris[tri_index])
          |> unzip
 
     def rasterize 'target [h] [w]
@@ -274,6 +247,8 @@ module TriangleTiledRasterizer : TriangleRasterizerSpec = \(V: VaryingSpec) ->
                   (ne: (target, f32))
                   (dest: [h][w](target, f32))
                   (frags: [](fragment V.t, fragment V.t, fragment V.t)) : [h][w](target, f32) =
+      let tiles_per_bin = coarse_size * coarse_size
+      let bins_w = w `div_ceil` bin_size
       let tris =
         frags
         |> map (\(f0, f1, f2) ->
@@ -283,9 +258,26 @@ module TriangleTiledRasterizer : TriangleRasterizerSpec = \(V: VaryingSpec) ->
                   ))
         |> filter (calc_signed_tri_area_2 >-> (i32.!=) 0)
         |> map ensure_cclockwise_winding_order
-      in bin_rasterize {h, w} tris
-         |> coarse_rasterize {h, w} tris
-         |> fine_rasterize plot depth_cmp ne dest tris
+      let (is, target_values, depth_values) =
+        bin_rasterize {h, w} tris
+        |> coarse_rasterize {h, w} tris
+        |> fine_rasterize {h, w} tris
+        |> map (\(tile_id, pixel_index, frag) ->
+                  let bin_index = tile_id / tiles_per_bin
+                  let tile_index = tile_id %% tiles_per_bin
+                  let bin_x = bin_index %% bins_w
+                  let bin_y = bin_index / bins_w
+                  let tile_x = tile_index %% coarse_size
+                  let tile_y = tile_index / coarse_size
+                  let pixel_x = pixel_index %% fine_size
+                  let pixel_y = pixel_index / fine_size
+                  let x = bin_x * bin_size + tile_x * fine_size + pixel_x
+                  let y = bin_y * bin_size + tile_y * fine_size + pixel_y
+                  in ((y, x), plot frag, frag.depth))
+        |> unzip3
+      let as = zip target_values depth_values
+      let cmp f0 f1 = match depth_cmp f0.1 f1.1 case #left -> f0 case #right -> f1
+      in reduce_by_index_2d (copy dest) cmp ne is as
   }
 
 -- | triangle rasterizer for testing purposes. can use the REPL for this
