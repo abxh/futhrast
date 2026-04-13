@@ -2,6 +2,8 @@ import "../../../diku-dk/segmented/segmented"
 
 import "../types"
 
+-- todo: do not plot before depth comparision
+
 local
 -- | line rasterizer specfication
 module type LineRasterizerSpec =

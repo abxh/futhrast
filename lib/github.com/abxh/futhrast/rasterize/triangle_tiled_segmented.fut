@@ -143,7 +143,6 @@ module TiledSegmentedTriangleRasterizer : TriangleRasterizerSpec = \(V: VaryingS
                        (dest: [h][w](target, f32))
                        (tris: []triangle)
                        ((tile_ids, tri_indices): ([n]i64, [n]i64)) : [h][w](target, f32) =
-      let cmp = (\f0 f1 -> match depth_cmp f0.1 f1.1 case #left -> f0 case #right -> f1)
       let bins_w = w `div_ceil` bin_size
       let bins_h = h `div_ceil` bin_size
       let tiles_per_bin = coarse_size * coarse_size
@@ -206,14 +205,27 @@ module TiledSegmentedTriangleRasterizer : TriangleRasterizerSpec = \(V: VaryingS
                                               , f32.i64 w.1 * inv_area_2
                                               , f32.i64 w.2 * inv_area_2
                                               )
-                                            let pos =
-                                              { x = f32.i64 (pixel_x + tile_xmin)
-                                              , y = f32.i64 (pixel_y + tile_ymin)
-                                              }
                                             let Z_inv = barycentric f0.Z_inv f1.Z_inv f2.Z_inv w
-                                            let depth = barycentric_affine Z_inv (f0.depth, f0.Z_inv) (f1.depth, f1.Z_inv) (f2.depth, f2.Z_inv) w
-                                            let attr = barycentric_affine_attr Z_inv (f0.attr, f0.Z_inv) (f1.attr, f1.Z_inv) (f2.attr, f2.Z_inv) w
-                                            in cmp acc_tile[pixel_y, pixel_x] (plot {pos, Z_inv, depth, attr}, depth)
+                                            let depth =
+                                              barycentric_affine Z_inv
+                                                                 (f0.depth, f0.Z_inv)
+                                                                 (f1.depth, f1.Z_inv)
+                                                                 (f2.depth, f2.Z_inv)
+                                                                 w
+                                            in match depth_cmp acc_tile[pixel_y, pixel_x].1 depth
+                                               case #left -> acc_tile[pixel_y, pixel_x]
+                                               case #right ->
+                                                 let pos =
+                                                   { x = f32.i64 (pixel_x + tile_xmin)
+                                                   , y = f32.i64 (pixel_y + tile_ymin)
+                                                   }
+                                                 let attr =
+                                                   barycentric_affine_attr Z_inv
+                                                                           (f0.attr, f0.Z_inv)
+                                                                           (f1.attr, f1.Z_inv)
+                                                                           (f2.attr, f2.Z_inv)
+                                                                           w
+                                                 in (plot {pos, Z_inv, depth, attr}, depth)
                                        else acc_tile[pixel_y, pixel_x]
                                   in tabulate_2d fine_size fine_size f)
                                tile

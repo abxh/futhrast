@@ -1,5 +1,7 @@
 import "../types"
 
+-- todo: do not plot before depth comparision
+
 local
 -- | point rasterizer specfication
 module type PointRasterizerSpec =

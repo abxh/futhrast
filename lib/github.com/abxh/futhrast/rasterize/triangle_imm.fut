@@ -1,5 +1,7 @@
 --  immediate-mode triangle rasterizer
 
+-- todo: do not plot before depth comparision
+
 import "../../../diku-dk/segmented/segmented"
 
 import "../types"
