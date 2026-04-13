@@ -72,6 +72,14 @@ module TiledSegmentedTriangleRasterizer : TriangleRasterizerSpec = \(V: VaryingS
         let v2v0 = v0 - v2
         let v0v1 = v1 - v0
         in (cross v1v2 v1p, cross v2v0 v2p, cross v0v1 v0p) |> vec3i.from_tuple
+
+      def calc_wdelta ((v0, v1, v2): (vec2i.t, vec2i.t, vec2i.t)) : (vec3i.t, vec3i.t) =
+        let v1v2 = v2 - v1
+        let v2v0 = v0 - v2
+        let v0v1 = v1 - v0
+        let delta_wx = (i64.neg v1v2.y, i64.neg v2v0.y, i64.neg v0v1.y) |> vec3i.from_tuple
+        let delta_wy = (v1v2.x, v2v0.x, v0v1.x) |> vec3i.from_tuple
+        in (delta_wx, delta_wy)
     }
 
     open wcoeffs
@@ -184,10 +192,12 @@ module TiledSegmentedTriangleRasterizer : TriangleRasterizerSpec = \(V: VaryingS
                                     , vec2i32.map i64.i32 f1.pos
                                     , vec2i32.map i64.i32 f2.pos
                                     )
+                                  let w_zero = calc_wcoeffs verts {x = tile_xmin, y = tile_ymin}
+                                  let w_delta = calc_wdelta verts
                                   let f pixel_y pixel_x =
-                                    let x = pixel_x + tile_xmin
-                                    let y = pixel_y + tile_ymin
-                                    let w = calc_wcoeffs verts {x, y} |> vec3i.to_tuple
+                                    let w =
+                                      w_zero vec3i.+ (pixel_x vec3i.* w_delta.0) vec3i.+ (pixel_y vec3i.* w_delta.1)
+                                      |> vec3i.to_tuple
                                     in if w.0 >= 0 && w.1 >= 0 && w.2 >= 0
                                        then let area_2 = calc_signed_tri_area_2 (f0, f1, f2)
                                             let (w0, w1, w2) =
@@ -196,7 +206,10 @@ module TiledSegmentedTriangleRasterizer : TriangleRasterizerSpec = \(V: VaryingS
                                               , f32.i64 w.2 / f32.i64 area_2
                                               )
                                             let w = (w0, w1, w2)
-                                            let pos = {x = f32.i64 x, y = f32.i64 y}
+                                            let pos =
+                                              { x = f32.i64 (pixel_x + tile_xmin)
+                                              , y = f32.i64 (pixel_y + tile_ymin)
+                                              }
                                             let Z_inv = barycentric f0.Z_inv f1.Z_inv f2.Z_inv w
                                             let depth = barycentric_affine Z_inv (f0.depth, f0.Z_inv) (f1.depth, f1.Z_inv) (f2.depth, f2.Z_inv) w
                                             let attr = barycentric_affine_attr Z_inv (f0.attr, f0.Z_inv) (f1.attr, f1.Z_inv) (f2.attr, f2.Z_inv) w
