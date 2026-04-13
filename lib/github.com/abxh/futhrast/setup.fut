@@ -170,6 +170,6 @@ module CustomRenderSetup (T: TriangleRasterizerSpec) (C: ConfigSpec) : RenderSet
   }
 
 -- | Default renderer setup
-module RenderSetup = CustomRenderSetup TriangleImmRasterizer
+module RenderSetup = CustomRenderSetup ImmTriangleRasterizer
 
 -- todo: cull/clip primitives.

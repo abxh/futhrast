@@ -5,7 +5,7 @@ import "lib/github.com/abxh/futhrast/rasterize/triangle_imm"
 import "lib/github.com/abxh/futhrast/math/vec"
 import "lib/github.com/abxh/futhrast/rasterize/triangle_imm"
 import "lib/github.com/abxh/futhrast/rasterize/triangle_tiled"
-import "lib/github.com/abxh/futhrast/rasterize/triangle_tiled_cpu_optimised"
+import "lib/github.com/abxh/futhrast/rasterize/triangle_tiled_segmented"
 import "lib/github.com/diku-dk/segmented/segmented"
 
 type~ lys_state =
@@ -24,7 +24,7 @@ type~ lys_state =
   , inds_head: []i64
   , render_model: #bunny | #monkey | #head
   , render_kind: #points | #lines | #triangles
-  , triangle_rasterizer_mode: #immediate | #tiled | #tiled_cpu_optimised
+  , triangle_rasterizer_mode: #immediate | #tiled | #tiled_segmented
   }
 
 module lys_text_content = {
@@ -32,7 +32,7 @@ module lys_text_content = {
 
   def text_format () =
     "FPS: %ld\n"
-    ++ "triangle rasterizer mode: %[immediate|tiled|tiled_cpu_optimised]\n"
+    ++ "triangle rasterizer mode: %[immediate|tiled|tiled and segmented (optimised for cpu)]\n"
     ++ "t: switch rasterizer mode\n"
     ++ "\n"
     ++ "b: bunny\n"
@@ -50,7 +50,7 @@ module lys_text_content = {
       match s.triangle_rasterizer_mode
       case #immediate -> 0
       case #tiled -> 1
-      case #tiled_cpu_optimised -> 2
+      case #tiled_segmented -> 2
     in (i64.f32 render_duration, tr_mode)
 
   def text_colour = const argb.white
@@ -137,8 +137,8 @@ module lys : lys with text_content = lys_text_content.text_content = {
     else if key == SDLK_t
     then s with triangle_rasterizer_mode = match s.triangle_rasterizer_mode
            case #immediate -> #tiled
-           case #tiled -> #tiled_cpu_optimised
-           case #tiled_cpu_optimised -> #immediate
+           case #tiled -> #tiled_segmented
+           case #tiled_segmented -> #immediate
     else if key == SDLK_a
     then s with pos_delta.0 = -1
     else if key == SDLK_d
@@ -201,8 +201,8 @@ module lys : lys with text_content = lys_text_content.text_content = {
   }
 
   local module R = RenderSetup Config Varying
-  local module RT = CustomRenderSetup TriangleTiledRasterizer Config Varying
-  local module RTCPU = CustomRenderSetup TriangleTiledRasterizerCPUOptimised Config Varying
+  local module RT = CustomRenderSetup TiledTriangleRasterizer Config Varying
+  local module RTS = CustomRenderSetup TiledSegmentedTriangleRasterizer Config Varying
 
   local
   def on_vertex (s: state) (v: (f32, f32, f32)) : vertex_out Varying.t =
@@ -278,9 +278,9 @@ module lys : lys with text_content = lys_text_content.text_content = {
                         argb.black
            |> RT.unpack
            |> (.0)
-         case #tiled_cpu_optimised ->
-           RTCPU.init {w = s.w, h = s.h} (argb.gray 0.2)
-           |> RTCPU.render s
+         case #tiled_segmented->
+           RTS.init {w = s.w, h = s.h} (argb.gray 0.2)
+           |> RTS.render s
                            { primitive_type = #triangles
                            , vertices = verts
                            , indices = inds
@@ -288,6 +288,6 @@ module lys : lys with text_content = lys_text_content.text_content = {
                            on_vertex
                            on_fragment
                            argb.black
-           |> RTCPU.unpack
+           |> RTS.unpack
            |> (.0)
 }

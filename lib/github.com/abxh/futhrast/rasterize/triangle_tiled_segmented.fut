@@ -1,4 +1,6 @@
--- tiled triangle rasterizer optimised for cpu
+-- tiled and segmented triangle rasterizer (works well on cpu)
+
+-- todo: fix overflow? for large framebuffers
 
 import "../../../diku-dk/segmented/segmented"
 import "../../../diku-dk/sorts/radix_sort"
@@ -23,8 +25,8 @@ module type TriangleRasterizerSpec =
       -> [h][w](target, f32)
   }
 
--- | tiled triangle rasterizer optimised for the cpu
-module TriangleTiledRasterizerCPUOptimised : TriangleRasterizerSpec = \(V: VaryingSpec) ->
+-- | tiled and segmented triangle rasterizer
+module TiledSegmentedTriangleRasterizer : TriangleRasterizerSpec = \(V: VaryingSpec) ->
   {
     local module V = VaryingExtensions (V)
 
@@ -49,7 +51,6 @@ module TriangleTiledRasterizerCPUOptimised : TriangleRasterizerSpec = \(V: Varyi
       }
 
     module coarse_mask = bitmask_64
-    module fine_mask = bitmask_256
 
     local def bin_size : i64 = 128i64
     local def fine_size : i64 = 16i64
@@ -61,25 +62,17 @@ module TriangleTiledRasterizerCPUOptimised : TriangleRasterizerSpec = \(V: Varyi
 
     local
     module wcoeffs = {
-      local open vec2i32
+      local open vec2i
 
-      def calc_wcoeffs ((v0, v1, v2): (vec2i32.t, vec2i32.t, vec2i32.t)) (p: vec2i32.t) : vec3i32.t =
+      def calc_wcoeffs ((v0, v1, v2): (vec2i.t, vec2i.t, vec2i.t)) (p: vec2i.t) : vec3i.t =
         let v0p = p - v0
         let v1p = p - v1
         let v2p = p - v2
         let v1v2 = v2 - v1
         let v2v0 = v0 - v2
         let v0v1 = v1 - v0
-        in (cross v1v2 v1p, cross v2v0 v2p, cross v0v1 v0p) |> vec3i32.from_tuple
+        in (cross v1v2 v1p, cross v2v0 v2p, cross v0v1 v0p) |> vec3i.from_tuple
     }
-
-    -- def calc_wdelta ((v0, v1, v2): (vec2i32.t, vec2i32.t, vec2i32.t)) : (vec3i32.t, vec3i32.t) =
-    --   let v1v2 = v2 - v1
-    --   let v2v0 = v0 - v2
-    --   let v0v1 = v1 - v0
-    --   let delta_wx = (i32.neg v1v2.y, i32.neg v2v0.y, i32.neg v0v1.y) |> vec3i32.from_tuple
-    --   let delta_wy = (v1v2.x, v2v0.x, v0v1.x) |> vec3i32.from_tuple
-    --   in (delta_wx, delta_wy)
 
     open wcoeffs
 
@@ -96,11 +89,15 @@ module TriangleTiledRasterizerCPUOptimised : TriangleRasterizerSpec = \(V: Varyi
       , attr = f.attr
       }
 
-    def calc_signed_tri_area_2 ((f0, f1, f2): triangle) : i32 =
-      let (v0, v1, v2) = (f0.pos, f1.pos, f2.pos)
-      let v0v1 = v1 vec2i32.- v0
-      let v0v2 = v2 vec2i32.- v0
-      let signed_area_2 = v0v1 `vec2i32.cross` v0v2
+    def calc_signed_tri_area_2 ((f0, f1, f2): triangle) : i64 =
+      let (v0, v1, v2) =
+        ( vec2i32.map i64.i32 f0.pos
+        , vec2i32.map i64.i32 f1.pos
+        , vec2i32.map i64.i32 f2.pos
+        )
+      let v0v1 = v1 vec2i.- v0
+      let v0v2 = v2 vec2i.- v0
+      let signed_area_2 = v0v1 `vec2i.cross` v0v2
       in signed_area_2
 
     def ensure_cclockwise_winding_order ((f0, f1, f2): triangle) : triangle =
@@ -118,11 +115,15 @@ module TriangleTiledRasterizerCPUOptimised : TriangleRasterizerSpec = \(V: Varyi
       !(a.xmax <= b.xmin || a.xmin >= b.xmax || a.ymax <= b.ymin || a.ymin >= b.ymax)
 
     def tri_overlaps_bbox (bbox: bbox i64) ((f0, f1, f2): triangle) =
-      let p = (f0.pos, f1.pos, f2.pos)
-      let w0 = calc_wcoeffs p {x = i32.i64 bbox.xmin, y = i32.i64 bbox.ymin}
-      let w1 = calc_wcoeffs p {x = i32.i64 bbox.xmin, y = i32.i64 bbox.ymax}
-      let w2 = calc_wcoeffs p {x = i32.i64 bbox.xmax, y = i32.i64 bbox.ymin}
-      let w3 = calc_wcoeffs p {x = i32.i64 bbox.xmax, y = i32.i64 bbox.ymax}
+      let p =
+        ( vec2i32.map i64.i32 f0.pos
+        , vec2i32.map i64.i32 f1.pos
+        , vec2i32.map i64.i32 f2.pos
+        )
+      let w0 = calc_wcoeffs p {x = bbox.xmin, y = bbox.ymin}
+      let w1 = calc_wcoeffs p {x = bbox.xmin, y = bbox.ymax}
+      let w2 = calc_wcoeffs p {x = bbox.xmax, y = bbox.ymin}
+      let w3 = calc_wcoeffs p {x = bbox.xmax, y = bbox.ymax}
       let is_outside proj = proj w0 < 0 && proj w1 < 0 && proj w2 < 0 && proj w3 < 0
       in !(is_outside (.x) || is_outside (.y) || is_outside (.z))
 
@@ -133,22 +134,18 @@ module TriangleTiledRasterizerCPUOptimised : TriangleRasterizerSpec = \(V: Varyi
                        (dest: [h][w](target, f32))
                        (tris: []triangle)
                        ((tile_ids, tri_indices): ([n]i64, [n]i64)) : [h][w](target, f32) =
+      let cmp = (\f0 f1 -> match depth_cmp f0.1 f1.1 case #left -> f0 case #right -> f1)
       let bins_w = w `div_ceil` bin_size
       let bins_h = h `div_ceil` bin_size
-      let tiles_per_bin =
-        assert (fine_size * fine_size == fine_mask.num_bits) (coarse_size * coarse_size)
+      let tiles_per_bin = coarse_size * coarse_size
       let num_tiles = bins_w * bins_h * tiles_per_bin
       let (tile_ids, tri_indices) =
         zip tile_ids tri_indices
         |> radix_sort_by_key (.0) (i32.i64 (ilog2 num_tiles)) i64.get_bit
         |> unzip
-      let cmp = (\f0 f1 -> match depth_cmp f0.1 f1.1 case #left -> f0 case #right -> f1)
-      let active_tiles =
-        spread num_tiles false tile_ids (replicate n true)
-        |> zip (iota num_tiles)
-        |> filter (\(_, flag) -> flag)
-        |> map (.0)
-      let counts = segmented_reduce (+) 0 (map2 (!=) tile_ids (rotate (-1) tile_ids)) (replicate n 1)
+      let flags = map2 (!=) tile_ids (rotate (-1) tile_ids)
+      let active_tiles = segmented_reduce i64.max (-1) flags tile_ids
+      let counts = segmented_reduce (+) 0 flags (replicate n 1)
       let offsets = counts |> exscan (+) 0
       let is =
         let f tile_id =
@@ -177,41 +174,37 @@ module TriangleTiledRasterizerCPUOptimised : TriangleRasterizerSpec = \(V: Varyi
                                                         let y = tile_ymin + dy
                                                         let x = tile_xmin + dx
                                                         in if y < h && x < w then dest[y, x] else ne)
-                   let (is, target_values, depth_values) =
-                     tri_indices
-                     |> drop offsets[i]
-                     |> take counts[i]
-                     |> map (\tri_index ->
-                               let (f0, f1, f2) = tris[tri_index]
-                               let verts = (f0.pos, f1.pos, f2.pos)
-                               let g pixel_index =
-                                 let y = tile_ymin + (pixel_index / fine_size) |> i32.i64
-                                 let x = tile_xmin + (pixel_index %% fine_size) |> i32.i64
-                                 let w = calc_wcoeffs verts {x, y}
-                                 in w.x >= 0 && w.y >= 0 && w.z >= 0
-                               let mask = fine_mask.from_pred g
-                               in (tri_index, mask))
-                     |> expand (\((_, mask)) -> fine_mask.size mask)
-                               (\((tri_index, mask)) set_pixel_index ->
-                                  let pixel_index = fine_mask.find_ith_set_bit mask set_pixel_index
-                                  let pixel_x = pixel_index %% fine_size
-                                  let pixel_y = pixel_index / fine_size
-                                  let x = pixel_x + tile_xmin
-                                  let y = pixel_y + tile_ymin
+                   in tri_indices
+                      |> drop offsets[i]
+                      |> take counts[i]
+                      |> foldl (\acc_tile tri_index ->
                                   let (f0, f1, f2) = tris[tri_index]
-                                  let verts = (f0.pos, f1.pos, f2.pos)
-                                  let area_2 = calc_signed_tri_area_2 (f0, f1, f2)
-                                  let (w0, w1, w2) = calc_wcoeffs verts {x = i32.i64 x, y = i32.i64 y} |> vec3i32.to_tuple
-                                  let (w0, w1, w2) = (f32.i32 w0 / f32.i32 area_2, f32.i32 w1 / f32.i32 area_2, f32.i32 w2 / f32.i32 area_2)
-                                  let w = (w0, w1, w2)
-                                  let pos = {x = f32.i64 x, y = f32.i64 y}
-                                  let Z_inv = barycentric f0.Z_inv f1.Z_inv f2.Z_inv w
-                                  let depth = barycentric_affine Z_inv (f0.depth, f0.Z_inv) (f1.depth, f1.Z_inv) (f2.depth, f2.Z_inv) w
-                                  let attr = barycentric_affine_attr Z_inv (f0.attr, f0.Z_inv) (f1.attr, f1.Z_inv) (f2.attr, f2.Z_inv) w
-                                  in ((pixel_y, pixel_x), plot {pos, Z_inv, depth, attr}, depth))
-                     |> unzip3
-                   let as = zip target_values depth_values
-                   in reduce_by_index_2d tile cmp ne is as |> flatten)
+                                  let verts =
+                                    ( vec2i32.map i64.i32 f0.pos
+                                    , vec2i32.map i64.i32 f1.pos
+                                    , vec2i32.map i64.i32 f2.pos
+                                    )
+                                  let f pixel_y pixel_x =
+                                    let x = pixel_x + tile_xmin
+                                    let y = pixel_y + tile_ymin
+                                    let w = calc_wcoeffs verts {x, y} |> vec3i.to_tuple
+                                    in if w.0 >= 0 && w.1 >= 0 && w.2 >= 0
+                                       then let area_2 = calc_signed_tri_area_2 (f0, f1, f2)
+                                            let (w0, w1, w2) =
+                                              ( f32.i64 w.0 / f32.i64 area_2
+                                              , f32.i64 w.1 / f32.i64 area_2
+                                              , f32.i64 w.2 / f32.i64 area_2
+                                              )
+                                            let w = (w0, w1, w2)
+                                            let pos = {x = f32.i64 x, y = f32.i64 y}
+                                            let Z_inv = barycentric f0.Z_inv f1.Z_inv f2.Z_inv w
+                                            let depth = barycentric_affine Z_inv (f0.depth, f0.Z_inv) (f1.depth, f1.Z_inv) (f2.depth, f2.Z_inv) w
+                                            let attr = barycentric_affine_attr Z_inv (f0.attr, f0.Z_inv) (f1.attr, f1.Z_inv) (f2.attr, f2.Z_inv) w
+                                            in cmp acc_tile[pixel_y, pixel_x] (plot {pos, Z_inv, depth, attr}, depth)
+                                       else acc_tile[pixel_y, pixel_x]
+                                  in tabulate_2d fine_size fine_size f)
+                               tile
+                      |> flatten)
          |> flatten
          |> scatter_2d (copy dest) is
 
@@ -292,7 +285,7 @@ module TriangleTiledRasterizerCPUOptimised : TriangleRasterizerSpec = \(V: Varyi
                   , round_fragment f1
                   , round_fragment f2
                   ))
-        |> filter (calc_signed_tri_area_2 >-> (i32.!=) 0)
+        |> filter (calc_signed_tri_area_2 >-> (i64.!=) 0)
         |> map ensure_cclockwise_winding_order
       in bin_rasterize {h, w} tris
          |> coarse_rasterize {h, w} tris
