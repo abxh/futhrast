@@ -1,6 +1,7 @@
 -- tiled and segmented triangle rasterizer (works well on cpu)
 
 -- todo: fix overflow? for large framebuffers
+-- futher optimisation idea: keep track minimum/maximum depth while tile is being rasterized
 
 import "../../../diku-dk/segmented/segmented"
 import "../../../diku-dk/sorts/radix_sort"
@@ -194,18 +195,17 @@ module TiledSegmentedTriangleRasterizer : TriangleRasterizerSpec = \(V: VaryingS
                                     )
                                   let w_zero = calc_wcoeffs verts {x = tile_xmin, y = tile_ymin}
                                   let w_delta = calc_wdelta verts
+                                  let inv_area_2 = 1 / f32.i64 (calc_signed_tri_area_2 (f0, f1, f2))
                                   let f pixel_y pixel_x =
                                     let w =
                                       w_zero vec3i.+ (pixel_x vec3i.* w_delta.0) vec3i.+ (pixel_y vec3i.* w_delta.1)
                                       |> vec3i.to_tuple
                                     in if w.0 >= 0 && w.1 >= 0 && w.2 >= 0
-                                       then let area_2 = calc_signed_tri_area_2 (f0, f1, f2)
-                                            let (w0, w1, w2) =
-                                              ( f32.i64 w.0 / f32.i64 area_2
-                                              , f32.i64 w.1 / f32.i64 area_2
-                                              , f32.i64 w.2 / f32.i64 area_2
+                                       then let w =
+                                              ( f32.i64 w.0 * inv_area_2
+                                              , f32.i64 w.1 * inv_area_2
+                                              , f32.i64 w.2 * inv_area_2
                                               )
-                                            let w = (w0, w1, w2)
                                             let pos =
                                               { x = f32.i64 (pixel_x + tile_xmin)
                                               , y = f32.i64 (pixel_y + tile_ymin)
