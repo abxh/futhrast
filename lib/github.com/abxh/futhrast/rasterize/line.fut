@@ -2,8 +2,6 @@ import "../../../diku-dk/segmented/segmented"
 
 import "../types"
 
--- todo: do not plot before depth comparision
-
 local
 -- | line rasterizer specfication
 module type LineRasterizerSpec =
@@ -49,15 +47,6 @@ module LineRasterizer : LineRasterizerSpec = \(V: VaryingSpec) ->
     def compare_i32 (l: i32) (r: i32) : i32 =
       i32.bool (l < r) - i32.bool (l > r)
 
-    def plot_fragment 'target (plot: (fragment V.t -> target)) (f: fragment_generic i32 V.t) =
-      let f' =
-        { pos = {x = f32.i32 f.pos.x, y = f32.i32 f.pos.y}
-        , depth = f.depth
-        , Z_inv = f.Z_inv
-        , attr = f.attr
-        }
-      in ((i64.i32 f.pos.y, i64.i32 f.pos.x), plot f', f.depth)
-
     def get_line_slope {x = x0: i32, y = y0: i32} {x = x1: i32, y = y1: i32} : f32 =
       if x1 == x0
       then if y1 > y0 then 1 else -1
@@ -94,22 +83,44 @@ module LineRasterizer : LineRasterizerSpec = \(V: VaryingSpec) ->
               let attr = lerp_affine_attr Z_inv (v0.attr, v0.Z_inv) (v1.attr, v1.Z_inv) t
               in {pos, depth, Z_inv, attr}
 
+    def transform_fragment {h = _: i64, w = w: i64} (f: fragment_generic i32 V.t) =
+      let y = i64.i32 f.pos.y
+      let x = i64.i32 f.pos.x
+      let i = y * w + x
+      let f' =
+        { pos = {x = f32.i32 f.pos.x, y = f32.i32 f.pos.y}
+        , depth = f.depth
+        , Z_inv = f.Z_inv
+        , attr = f.attr
+        }
+      in (i, f', f.depth)
+
     def rasterize 'target [n] [h] [w]
                   (plot: (fragment V.t -> target))
                   (depth_cmp: f32 -> f32 -> #left | #right)
-                  (ne: (target, f32))
+                  ((ne_target, ne_depth): (target, f32))
                   (dest: [h][w](target, f32))
                   (frags: [n](fragment V.t, fragment V.t)) : ([h][w](target, f32)) =
-      let (is, target_values, depth_values) =
+      let depth_cmp (d0: f32) (d1: f32) =
+        match depth_cmp d0 d1
+        case #left -> d0
+        case #right -> d1
+      let (is, frag_values, depth_values) =
         frags
         |> map (\l -> (round_fragment l.0, round_fragment l.1))
         |> filter (\l -> get_line_size l > 1)
         |> expand get_line_size get_point_in_line
-        |> map (plot_fragment plot)
+        |> map (transform_fragment {h, w})
         |> unzip3
-      let as = zip target_values depth_values
-      let cmp f0 f1 = match depth_cmp f0.1 f1.1 case #left -> f0 case #right -> f1
-      in reduce_by_index_2d (copy dest) cmp ne is as
+      let depth_buffer = flatten dest |> map (.1)
+      let depth_buffer = reduce_by_index (copy depth_buffer) depth_cmp ne_depth is depth_values
+      let (is, target_values) =
+        zip3 is frag_values depth_values
+        |> map (\(i, f, d) -> if depth_buffer[i] == d then (i, plot f) else (-1, ne_target))
+        |> unzip2
+      let target_buffer = flatten dest |> map (.0)
+      let target_buffer = scatter (copy target_buffer) is target_values
+      in zip target_buffer depth_buffer |> unflatten
   }
 
 -- line rasterizer for testing purposes. can use the REPL for this

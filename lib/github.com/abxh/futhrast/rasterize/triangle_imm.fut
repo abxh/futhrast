@@ -1,7 +1,5 @@
 --  immediate-mode triangle rasterizer
 
--- todo: do not plot before depth comparision
-
 import "../../../diku-dk/segmented/segmented"
 
 import "../types"
@@ -72,15 +70,6 @@ module ImmTriangleRasterizer : TriangleRasterizerSpec = \(V: VaryingSpec) ->
       let w2 = 1 - w0 - w1
       in (w0, w1, w2)
 
-    def plot_fragment 'target (plot: (fragment V.t -> target)) (f: fragment_generic i32 V.t) =
-      let f' =
-        { pos = {x = f32.i32 f.pos.x, y = f32.i32 f.pos.y}
-        , depth = f.depth
-        , Z_inv = f.Z_inv
-        , attr = f.attr
-        }
-      in ((i64.i32 f.pos.y, i64.i32 f.pos.x), plot f', f.depth)
-
     def get_horizontal_line_size (((pl, pr), _): ((vec2i32.t, vec2i32.t), triangle)) : i64 =
       -- exclusive range to fullfill top-left edge rule
       i64.i32 (pr.x - pl.x)
@@ -141,23 +130,45 @@ module ImmTriangleRasterizer : TriangleRasterizerSpec = \(V: VaryingSpec) ->
               let (pl, pr) = if p0.x <= p1.x then (p0, p1) else (p1, p0)
               in ((pl, pr), (f0, f1, f2))
 
+    def transform_fragment {h = _: i64, w = w: i64} (f: fragment_generic i32 V.t) =
+      let y = i64.i32 f.pos.y
+      let x = i64.i32 f.pos.x
+      let i = y * w + x
+      let f' =
+        { pos = {x = f32.i32 f.pos.x, y = f32.i32 f.pos.y}
+        , depth = f.depth
+        , Z_inv = f.Z_inv
+        , attr = f.attr
+        }
+      in (i, f', f.depth)
+
     def rasterize 'target [n] [h] [w]
                   (plot: (fragment V.t -> target))
                   (depth_cmp: f32 -> f32 -> #left | #right)
-                  (ne: (target, f32))
+                  ((ne_target, ne_depth): (target, f32))
                   (dest: [h][w](target, f32))
                   (frags: [n](fragment V.t, fragment V.t, fragment V.t)) : [h][w](target, f32) =
-      let (is, target_values, depth_values) =
+      let depth_cmp (d0: f32) (d1: f32) =
+        match depth_cmp d0 d1
+        case #left -> d0
+        case #right -> d1
+      let (is, frag_values, depth_values) =
         frags
         |> map (\tri -> (round_fragment tri.0, round_fragment tri.1, round_fragment tri.2))
         |> map (ensure_cclockwise_winding_order)
         |> expand num_lines_in_triangle get_line_in_triangle
         |> expand get_horizontal_line_size get_point_in_horizontal_line
-        |> map (plot_fragment plot)
+        |> map (transform_fragment {h, w})
         |> unzip3
-      let as = zip target_values depth_values
-      let cmp = (\f0 f1 -> match depth_cmp f0.1 f1.1 case #left -> f0 case #right -> f1)
-      in reduce_by_index_2d (copy dest) cmp ne is as
+      let depth_buffer = flatten dest |> map (.1)
+      let depth_buffer = reduce_by_index (copy depth_buffer) depth_cmp ne_depth is depth_values
+      let (is, target_values) =
+        zip3 is frag_values depth_values
+        |> map (\(i, f, d) -> if depth_buffer[i] == d then (i, plot f) else (-1, ne_target))
+        |> unzip2
+      let target_buffer = flatten dest |> map (.0)
+      let target_buffer = scatter (copy target_buffer) is target_values
+      in zip target_buffer depth_buffer |> unflatten
   }
 
 -- | immediate triangle rasterizer for testing purposes. can use the REPL for this

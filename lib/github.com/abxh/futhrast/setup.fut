@@ -96,8 +96,8 @@ module CustomRenderSetup (T: TriangleRasterizerSpec) (C: ConfigSpec) : RenderSet
 
     local
     def depth_cmp lhs rhs : #left | #right =
-      if (lhs f32.> rhs) && C.depth_type == #reversed_z
-      || (lhs f32.< rhs) && C.depth_type == #normal_z
+      if C.depth_type == #reversed_z && (lhs f32.> rhs)
+      || C.depth_type == #normal_z && (lhs f32.< rhs)
       then #left
       else #right
 
