@@ -181,12 +181,12 @@ module TiledTriangleRasterizer : TriangleRasterizerSpec = \(V: VaryingSpec) ->
                         , f32.i64 w1 / f32.i64 area_2
                         , f32.i64 w2 / f32.i64 area_2
                         )
-                      let W = (w0, w1, w2)
+                      let w = (w0, w1, w2)
                       let pos = {x = f32.i64 x, y = f32.i64 y}
-                      let Z_inv = barycentric f0.Z_inv f1.Z_inv f2.Z_inv W
-                      let depth = barycentric_affine Z_inv (f0.depth, f0.Z_inv) (f1.depth, f1.Z_inv) (f2.depth, f2.Z_inv) W
-                      let attr = barycentric_affine_attr Z_inv (f0.attr, f0.Z_inv) (f1.attr, f1.Z_inv) (f2.attr, f2.Z_inv) W
-                      in (y * w + x, {pos, Z_inv, depth, attr}, depth))
+                      let Z_inv = barycentric f0.Z_inv f1.Z_inv f2.Z_inv w
+                      let depth = barycentric_affine Z_inv (f0.depth, f0.Z_inv) (f1.depth, f1.Z_inv) (f2.depth, f2.Z_inv) w
+                      let attr = barycentric_affine_attr Z_inv (f0.attr, f0.Z_inv) (f1.attr, f1.Z_inv) (f2.attr, f2.Z_inv) w
+                      in ((y, x), {pos, Z_inv, depth, attr}, depth))
 
     def coarse_rasterize [n] {h = h: i64, w = w: i64} (tris: []triangle) ((bin_indices, tri_indices): ([n]i64, [n]i64)) =
       let fb_bbox = {xmin = 0, ymin = 0, xmax = w, ymax = h}
@@ -276,15 +276,18 @@ module TiledTriangleRasterizer : TriangleRasterizerSpec = \(V: VaryingSpec) ->
         |> coarse_rasterize {h, w} tris
         |> fine_rasterize {h, w} tris
         |> unzip3
-      let depth_buffer = flatten dest |> map (.1)
-      let depth_buffer = reduce_by_index (copy depth_buffer) depth_cmp ne_depth is depth_values
+      let depth_buffer = flatten dest |> map (.1) |> unflatten
+      let depth_buffer = reduce_by_index_2d (copy depth_buffer) depth_cmp ne_depth is depth_values
       let (is, target_values) =
         zip3 is frag_values depth_values
-        |> map (\(i, f, d) -> if depth_buffer[i] == d then (i, plot f) else (-1, ne_target))
+        |> map (\((y, x), f, d) ->
+                  if (0 <= x && x < w) && (0 <= y && y < h) && depth_buffer[y, x] == d
+                  then ((y, x), plot f)
+                  else ((-1, -1), ne_target))
         |> unzip2
-      let target_buffer = flatten dest |> map (.0)
-      let target_buffer = scatter (copy target_buffer) is target_values
-      in zip target_buffer depth_buffer |> unflatten
+      let target_buffer = flatten dest |> map (.0) |> unflatten
+      let target_buffer = scatter_2d (copy target_buffer) is target_values
+      in zip (flatten target_buffer) (flatten depth_buffer) |> unflatten
   }
 
 -- | triangle rasterizer for testing purposes. can use the REPL for this

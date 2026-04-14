@@ -23,11 +23,10 @@ module PointRasterizer : PointRasterizerSpec = \(V: VaryingSpec) ->
   {
     def ilog2 (n: i64) : i64 = i64.i32 (63 - i64.clz n)
 
-    def transform_fragment {h = _: i64, w = w: i64} (f: fragment V.t) =
+    def transform_fragment (f: fragment V.t) =
       let y = i64.f32 (f.pos.y + 0.5)
       let x = i64.f32 (f.pos.x + 0.5)
-      let i = y * w + x
-      in (i, f, f.depth)
+      in ((y, x), f, f.depth)
 
     def rasterize 'target [n] [h] [w]
                   (plot: (fragment V.t -> target))
@@ -41,17 +40,20 @@ module PointRasterizer : PointRasterizerSpec = \(V: VaryingSpec) ->
         case #right -> d1
       let (is, frag_values, depth_values) =
         frags
-        |> map (transform_fragment {h, w})
+        |> map transform_fragment
         |> unzip3
-      let depth_buffer = flatten dest |> map (.1)
-      let depth_buffer = reduce_by_index (copy depth_buffer) depth_cmp ne_depth is depth_values
+      let depth_buffer = flatten dest |> map (.1) |> unflatten
+      let depth_buffer = reduce_by_index_2d (copy depth_buffer) depth_cmp ne_depth is depth_values
       let (is, target_values) =
         zip3 is frag_values depth_values
-        |> map (\(i, f, d) -> if depth_buffer[i] == d then (i, plot f) else (-1, ne_target))
+        |> map (\((y, x), f, d) ->
+                  if (0 <= x && x < w) && (0 <= y && y < h) && depth_buffer[y, x] == d
+                  then ((y, x), plot f)
+                  else ((-1, -1), ne_target))
         |> unzip2
-      let target_buffer = flatten dest |> map (.0)
-      let target_buffer = scatter (copy target_buffer) is target_values
-      in zip target_buffer depth_buffer |> unflatten
+      let target_buffer = flatten dest |> map (.0) |> unflatten
+      let target_buffer = scatter_2d (copy target_buffer) is target_values
+      in zip (flatten target_buffer) (flatten depth_buffer) |> unflatten
   }
 
 -- point rasterizer for testing purposes. can use the REPL for this

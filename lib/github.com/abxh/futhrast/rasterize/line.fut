@@ -83,17 +83,16 @@ module LineRasterizer : LineRasterizerSpec = \(V: VaryingSpec) ->
               let attr = lerp_affine_attr Z_inv (v0.attr, v0.Z_inv) (v1.attr, v1.Z_inv) t
               in {pos, depth, Z_inv, attr}
 
-    def transform_fragment {h = _: i64, w = w: i64} (f: fragment_generic i32 V.t) =
+    def transform_fragment (f: fragment_generic i32 V.t) =
       let y = i64.i32 f.pos.y
       let x = i64.i32 f.pos.x
-      let i = y * w + x
       let f' =
         { pos = {x = f32.i32 f.pos.x, y = f32.i32 f.pos.y}
         , depth = f.depth
         , Z_inv = f.Z_inv
         , attr = f.attr
         }
-      in (i, f', f.depth)
+      in ((y, x), f', f.depth)
 
     def rasterize 'target [n] [h] [w]
                   (plot: (fragment V.t -> target))
@@ -110,17 +109,20 @@ module LineRasterizer : LineRasterizerSpec = \(V: VaryingSpec) ->
         |> map (\l -> (round_fragment l.0, round_fragment l.1))
         |> filter (\l -> get_line_size l > 1)
         |> expand get_line_size get_point_in_line
-        |> map (transform_fragment {h, w})
+        |> map transform_fragment
         |> unzip3
-      let depth_buffer = flatten dest |> map (.1)
-      let depth_buffer = reduce_by_index (copy depth_buffer) depth_cmp ne_depth is depth_values
+      let depth_buffer = flatten dest |> map (.1) |> unflatten
+      let depth_buffer = reduce_by_index_2d (copy depth_buffer) depth_cmp ne_depth is depth_values
       let (is, target_values) =
         zip3 is frag_values depth_values
-        |> map (\(i, f, d) -> if depth_buffer[i] == d then (i, plot f) else (-1, ne_target))
+        |> map (\((y, x), f, d) ->
+                  if (0 <= x && x < w) && (0 <= y && y < h) && depth_buffer[y, x] == d
+                  then ((y, x), plot f)
+                  else ((-1, -1), ne_target))
         |> unzip2
-      let target_buffer = flatten dest |> map (.0)
-      let target_buffer = scatter (copy target_buffer) is target_values
-      in zip target_buffer depth_buffer |> unflatten
+      let target_buffer = flatten dest |> map (.0) |> unflatten
+      let target_buffer = scatter_2d (copy target_buffer) is target_values
+      in zip (flatten target_buffer) (flatten depth_buffer) |> unflatten
   }
 
 -- line rasterizer for testing purposes. can use the REPL for this
