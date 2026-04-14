@@ -1,12 +1,7 @@
 import "lib/github.com/abxh/lys/lys"
-import "lib/github.com/abxh/futhrast/types"
+
 import "lib/github.com/abxh/futhrast/setup"
-import "lib/github.com/abxh/futhrast/rasterize/triangle_imm"
 import "lib/github.com/abxh/futhrast/math/vec"
-import "lib/github.com/abxh/futhrast/rasterize/triangle_imm"
-import "lib/github.com/abxh/futhrast/rasterize/triangle_tiled"
-import "lib/github.com/abxh/futhrast/rasterize/triangle_tiled_segmented"
-import "lib/github.com/diku-dk/segmented/segmented"
 
 type~ lys_state =
   { h: i64
@@ -278,16 +273,16 @@ module lys : lys with text_content = lys_text_content.text_content = {
                         argb.black
            |> RT.unpack
            |> (.0)
-         case #tiled_segmented->
+         case #tiled_segmented ->
            RTS.init {w = s.w, h = s.h} (argb.gray 0.2)
            |> RTS.render s
-                           { primitive_type = #triangles
-                           , vertices = verts
-                           , indices = inds
-                           }
-                           on_vertex
-                           on_fragment
-                           argb.black
+                         { primitive_type = #triangles
+                         , vertices = verts
+                         , indices = inds
+                         }
+                         on_vertex
+                         on_fragment
+                         argb.black
            |> RTS.unpack
            |> (.0)
 }

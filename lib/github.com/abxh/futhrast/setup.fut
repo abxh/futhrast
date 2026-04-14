@@ -2,12 +2,14 @@
 
 import "../../diku-dk/segmented/segmented"
 
-import "types"
 import "math/vec"
-import "rasterize/point"
-import "rasterize/line"
-import "rasterize/triangle_imm"
-import "rasterize/triangle_tiled"
+
+open import "types"
+open import "rasterize/point"
+open import "rasterize/line"
+open import "rasterize/triangle_imm"
+open import "rasterize/triangle_tiled"
+open import "rasterize/triangle_tiled_segmented"
 
 -- | configuration options
 module type ConfigSpec = {
