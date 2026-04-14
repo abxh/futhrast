@@ -2,10 +2,13 @@
 -- compiled input @ bunny.in
 -- compiled input @ monkey.in
 -- compiled input @ african_head.in
+-- compiled input @ penger.in
 
 import "../lib/github.com/abxh/futhrast/types"
 import "../lib/github.com/abxh/futhrast/setup"
 import "../lib/github.com/abxh/futhrast/math/vec"
+
+import "../lib/github.com/abxh/futhrast/rasterize/triangle_tiled_segmented"
 
 import "../lib/github.com/athas/matte/colour"
 

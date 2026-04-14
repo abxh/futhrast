@@ -14,10 +14,12 @@ type~ lys_state =
   , verts_bunny: [](f32, f32, f32)
   , verts_monkey: [](f32, f32, f32)
   , verts_head: [](f32, f32, f32)
+  , verts_penger: [](f32, f32, f32)
   , inds_bunny: []i64
   , inds_monkey: []i64
   , inds_head: []i64
-  , render_model: #bunny | #monkey | #head
+  , inds_penger: []i64
+  , render_model: #bunny | #monkey | #head | #penger
   , render_kind: #points | #lines | #triangles
   , triangle_rasterizer_mode: #immediate | #tiled | #tiled_segmented
   }
@@ -33,6 +35,7 @@ module lys_text_content = {
     ++ "b: bunny\n"
     ++ "m: monkey\n"
     ++ "h: african head\n"
+    ++ "p: penger\n"
     ++ "\n"
     ++ "0: snap into position\n"
     ++ "1|2|3: point|line|triangle\n"
@@ -57,6 +60,7 @@ module lys_file = {
     ++ "bunny.obj,"
     ++ "monkey.obj,"
     ++ "african_head.obj,"
+    ++ "penger.obj,"
 
   def load_bin _ _ s = s
 
@@ -68,6 +72,8 @@ module lys_file = {
       s with inds_monkey = is
     case 2 ->
       s with inds_head = is
+    case 3 ->
+      s with inds_penger = is
     case _ ->
       s
 
@@ -79,6 +85,8 @@ module lys_file = {
       s with verts_monkey = vs
     case 2 ->
       s with verts_head = vs
+    case 3 ->
+      s with verts_penger = vs
     case _ ->
       s
 
@@ -105,9 +113,11 @@ module lys : lys with text_content = lys_text_content.text_content = {
     , inds_bunny = replicate 0 (-1)
     , inds_monkey = replicate 0 (-1)
     , inds_head = replicate 0 (-1)
+    , inds_penger = replicate 0 (-1)
     , verts_bunny = replicate 0 (0, 0, 0)
     , verts_monkey = replicate 0 (0, 0, 0)
     , verts_head = replicate 0 (0, 0, 0)
+    , verts_penger = replicate 0 (0, 0, 0)
     , render_model = #bunny
     , render_kind = #triangles
     , triangle_rasterizer_mode = #tiled
@@ -129,6 +139,8 @@ module lys : lys with text_content = lys_text_content.text_content = {
     then s with render_model = #monkey
     else if key == SDLK_h
     then s with render_model = #head
+    else if key == SDLK_p
+    then s with render_model = #penger
     else if key == SDLK_t
     then s with triangle_rasterizer_mode = match s.triangle_rasterizer_mode
            case #immediate -> #tiled
@@ -221,6 +233,7 @@ module lys : lys with text_content = lys_text_content.text_content = {
       case #bunny -> (s.verts_bunny, s.inds_bunny)
       case #monkey -> (s.verts_monkey, s.inds_monkey)
       case #head -> (s.verts_head, s.inds_head)
+      case #penger -> (s.verts_penger, s.inds_penger)
     in match s.render_kind
        case #points ->
          R.init {w = s.w, h = s.h} argb.black

@@ -6,11 +6,12 @@ build:
 	./extract_obj_data ../bunny.obj
 	./extract_obj_data ../african_head.obj
 	./extract_obj_data ../monkey.obj
+	./extract_obj_data ../penger.obj
 	rm extract_obj_data
 
 run: run-point run-line run-triangle-imm run-triangle-tiled run-triangle-tiled-segmented
 	
-run-point: bunny.in monkey.in african_head.in
+run-point:
 	futhark bench --backend=multicore point.fut
 	
 	futhark bench --backend=opencl point.fut
@@ -21,7 +22,7 @@ run-point: bunny.in monkey.in african_head.in
 	
 	rm point.c point
 
-run-line: bunny.in monkey.in african_head.in
+run-line:
 	futhark bench --backend=multicore line.fut
 	
 	futhark bench --backend=opencl line.fut
@@ -32,7 +33,7 @@ run-line: bunny.in monkey.in african_head.in
 	
 	rm line.c line
 
-run-triangle-imm: bunny.in monkey.in african_head.in
+run-triangle-imm:
 	futhark bench --backend=multicore triangle_imm.fut
 	
 	futhark bench --backend=opencl triangle_imm.fut
@@ -43,7 +44,7 @@ run-triangle-imm: bunny.in monkey.in african_head.in
 	
 	rm triangle_imm.c triangle_imm
 
-run-triangle-tiled: bunny.in monkey.in african_head.in
+run-triangle-tiled:
 	futhark bench --backend=multicore triangle_tiled.fut
 	
 	futhark autotune --backend=opencl triangle_tiled.fut
@@ -58,7 +59,7 @@ run-triangle-tiled: bunny.in monkey.in african_head.in
 	
 	rm triangle_tiled.c triangle_tiled triangle_tiled.fut.tuning
 
-run-triangle-tiled-segmented: bunny.in monkey.in african_head.in
+run-triangle-tiled-segmented:
 	futhark bench --backend=multicore triangle_tiled_segmented.fut
 	
 	futhark autotune --backend=opencl triangle_tiled_segmented.fut
