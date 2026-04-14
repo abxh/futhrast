@@ -1,5 +1,3 @@
--- point rendering benchmark
---
 -- ==
 -- compiled input @ bunny.in
 -- compiled input @ monkey.in
