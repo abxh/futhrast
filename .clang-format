@@ -1,0 +1,21 @@
+# see https://clang.llvm.org/docs/ClangFormatStyleOptions.html
+---
+Language: Cpp
+Standard: "c++20"
+
+# ---
+BasedOnStyle: "Mozilla"
+
+UseTab: Never
+IndentCaseLabels: false
+BreakStringLiterals: false
+FixNamespaceComments: true
+AllowShortIfStatementsOnASingleLine: "OnlyFirstIf"
+IndentExternBlock: "NoIndent"
+
+IndentWidth: 2
+TabWidth: 2
+ContinuationIndentWidth: 2
+ConstructorInitializerIndentWidth: 2
+AccessModifierOffset: -2
+ColumnLimit: 80
