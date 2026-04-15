@@ -209,6 +209,7 @@ module lys : lys with text_content = lys_text_content.text_content = {
 
   local module R = RenderSetup Config Varying
   local module RT = CustomRenderSetup TiledTriangleRasterizer Config Varying
+  local module RTS = CustomRenderSetup TiledSegmentedTriangleRasterizer Config Varying
 
   local
   def on_vertex (s: state) (v: (f32, f32, f32)) : vertex_out Varying.t =
@@ -286,7 +287,15 @@ module lys : lys with text_content = lys_text_content.text_content = {
            |> RT.unpack
            |> (.0)
          case #tiled_segmented ->
-           RT.init {w = s.w, h = s.h} (argb.black)
-           |> RT.unpack
+           RTS.init {w = s.w, h = s.h} (argb.gray 0.2)
+           |> RTS.render s
+                         { primitive_type = #triangles
+                         , vertices = verts
+                         , indices = inds
+                         }
+                         on_vertex
+                         on_fragment
+                         argb.black
+           |> RTS.unpack
            |> (.0)
 }

@@ -14,12 +14,12 @@ import "../math/vec"
 module type TriangleRasterizerSpec =
   (V: VaryingSpec)
   -> {
-    -- | rasterize triangle given plot function, depth comparision function,
+    -- | rasterize triangle given plot function, depth selection function,
     -- triangle fragments, a neutral value for the target/depth buffers and
     -- the target/depth buffers themselves
     val rasterize 'target [n] [h] [w] :
       (plot: fragment V.t -> target)
-      -> (depth_select: f32 -> f32 -> f32)
+      -> (depth_cmp: f32 -> f32 -> f32)
       -> (ne: (target, f32))
       -> [h][w](target, f32)
       -> [n](fragment V.t, fragment V.t, fragment V.t)
@@ -139,7 +139,7 @@ module TiledSegmentedTriangleRasterizer : TriangleRasterizerSpec = \(V: VaryingS
     def fine_rasterize [n] 'target [h] [w]
                        (plot: (fragment V.t -> target))
                        (depth_select: f32 -> f32 -> f32)
-                       (ne: (target, f32))
+                       ((ne_target, ne_depth): (target, f32))
                        (dest: [h][w](target, f32))
                        (tris: []triangle)
                        ((tile_ids, tri_indices): ([n]i64, [n]i64)) : [h][w](target, f32) =
@@ -153,8 +153,10 @@ module TiledSegmentedTriangleRasterizer : TriangleRasterizerSpec = \(V: VaryingS
         |> unzip
       let flags = map2 (!=) tile_ids (rotate (-1) tile_ids)
       let active_tiles = segmented_reduce i64.max (-1) flags tile_ids
-      let counts = segmented_reduce (+) 0 flags (replicate n 1)
-      let offsets = counts |> exscan (+) 0
+      let segment_indices =
+        segmented_reduce (+) 0 flags (replicate n 1)
+        |> replicated_iota
+        |> sized n
       let is =
         let f tile_id =
           let bin_index = tile_id / tiles_per_bin
@@ -169,66 +171,58 @@ module TiledSegmentedTriangleRasterizer : TriangleRasterizerSpec = \(V: VaryingS
             in (y, x)
           in tabulate_2d fine_size fine_size f |> flatten
         in active_tiles |> map f |> flatten
-      in zip active_tiles (indices active_tiles)
-         |> map (\(tile_id, i) ->
-                   let bin_index = tile_id / tiles_per_bin
-                   let tile_index = tile_id %% tiles_per_bin
-                   let bin_xmin = (bin_index %% bins_w) * bin_size
-                   let bin_ymin = (bin_index / bins_w) * bin_size
-                   let tile_xmin = (tile_index %% coarse_size) * fine_size + bin_xmin
-                   let tile_ymin = (tile_index / coarse_size) * fine_size + bin_ymin
-                   let tile =
-                     tabulate_2d fine_size fine_size (\dy dx ->
-                                                        let y = tile_ymin + dy
-                                                        let x = tile_xmin + dx
-                                                        in if y < h && x < w then dest[y, x] else ne)
-                   in tri_indices
-                      |> drop offsets[i]
-                      |> take counts[i]
-                      |> foldl (\acc_tile tri_index ->
-                                  let (f0, f1, f2) = tris[tri_index]
-                                  let verts =
-                                    ( vec2i32.map i64.i32 f0.pos
-                                    , vec2i32.map i64.i32 f1.pos
-                                    , vec2i32.map i64.i32 f2.pos
-                                    )
-                                  let w_zero = calc_wcoeffs verts {x = tile_xmin, y = tile_ymin}
-                                  let w_delta = calc_wdelta verts
-                                  let inv_area_2 = 1 / f32.i64 (calc_signed_tri_area_2 (f0, f1, f2))
-                                  let f pixel_y pixel_x =
-                                    let w =
-                                      w_zero vec3i.+ (pixel_x vec3i.* w_delta.0) vec3i.+ (pixel_y vec3i.* w_delta.1)
-                                      |> vec3i.to_tuple
-                                    in if w.0 >= 0 && w.1 >= 0 && w.2 >= 0
-                                       then let w =
-                                              ( f32.i64 w.0 * inv_area_2
-                                              , f32.i64 w.1 * inv_area_2
-                                              , f32.i64 w.2 * inv_area_2
-                                              )
-                                            let pos =
-                                              { x = f32.i64 (pixel_x + tile_xmin)
-                                              , y = f32.i64 (pixel_y + tile_ymin)
-                                              }
-                                            let Z_inv = barycentric f0.Z_inv f1.Z_inv f2.Z_inv w
-                                            let depth =
-                                              barycentric_affine Z_inv
-                                                                 (f0.depth, f0.Z_inv)
-                                                                 (f1.depth, f1.Z_inv)
-                                                                 (f2.depth, f2.Z_inv)
-                                                                 w
-                                            let attr =
-                                              barycentric_affine_attr Z_inv
-                                                                      (f0.attr, f0.Z_inv)
-                                                                      (f1.attr, f1.Z_inv)
-                                                                      (f2.attr, f2.Z_inv)
-                                                                      w
-                                            in if depth_select acc_tile[pixel_y, pixel_x].1 depth == depth
-                                               then (plot {pos, Z_inv, depth, attr}, depth)
-                                               else acc_tile[pixel_y, pixel_x]
-                                       else acc_tile[pixel_y, pixel_x]
-                                  in tabulate_2d fine_size fine_size f)
-                               tile
-                      |> flatten)
+           |> sized ((length active_tiles) * (fine_size * fine_size))
+      let f dy dx =
+        let (frag_values: [](#some (fragment V.t) | #none), depth_values) =
+          zip tile_ids tri_indices
+          |> map (\(tile_id, tri_index) ->
+                    let bin_index = tile_id / tiles_per_bin
+                    let tile_index = tile_id %% tiles_per_bin
+                    let bin_xmin = (bin_index %% bins_w) * bin_size
+                    let bin_ymin = (bin_index / bins_w) * bin_size
+                    let tile_xmin = (tile_index %% coarse_size) * fine_size + bin_xmin
+                    let tile_ymin = (tile_index / coarse_size) * fine_size + bin_ymin
+                    let y = tile_ymin + dy
+                    let x = tile_xmin + dx
+                    let (f0, f1, f2) = tris[tri_index]
+                    let verts =
+                      ( vec2i32.map i64.i32 f0.pos
+                      , vec2i32.map i64.i32 f1.pos
+                      , vec2i32.map i64.i32 f2.pos
+                      )
+                    let w = calc_wcoeffs verts {x, y}
+                    in if w.x >= 0 && w.y >= 0 && w.z >= 0
+                       then let (f0, f1, f2) = tris[tri_index]
+                            let area_2 = calc_signed_tri_area_2 (f0, f1, f2)
+                            let (w0, w1, w2) = w |> vec3i.to_tuple
+                            let (w0, w1, w2) =
+                              ( f32.i64 w0 / f32.i64 area_2
+                              , f32.i64 w1 / f32.i64 area_2
+                              , f32.i64 w2 / f32.i64 area_2
+                              )
+                            let w = (w0, w1, w2)
+                            let pos = {x = f32.i64 x, y = f32.i64 y}
+                            let Z_inv = barycentric f0.Z_inv f1.Z_inv f2.Z_inv w
+                            let depth = barycentric_affine Z_inv (f0.depth, f0.Z_inv) (f1.depth, f1.Z_inv) (f2.depth, f2.Z_inv) w
+                            let attr = barycentric_affine_attr Z_inv (f0.attr, f0.Z_inv) (f1.attr, f1.Z_inv) (f2.attr, f2.Z_inv) w
+                            in (#some {pos, Z_inv, depth, attr}, depth)
+                       else (#none, ne_depth))
+          |> unzip
+        let depth_winners = segmented_reduce depth_select ne_depth flags depth_values
+        let (is, target_values) =
+          map3 (\segment_i d i ->
+                  if depth_winners[segment_i] == d
+                  then (segment_i, match frag_values[i] case #some f -> plot f case #none -> ne_target)
+                  else (-1, ne_target))
+               segment_indices
+               depth_values
+               (indices frag_values)
+          |> unzip
+        let target_winners = scatter (map (\_ -> ne_target) depth_winners) is target_values
+        in zip target_winners depth_winners |> sized (length active_tiles)
+      in tabulate_2d fine_size fine_size f
+         |> flatten
+         |> transpose
          |> flatten
          |> scatter_2d (copy dest) is
 
