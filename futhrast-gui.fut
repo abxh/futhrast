@@ -21,7 +21,7 @@ type~ lys_state =
   , inds_penger: []i64
   , render_model: #bunny | #monkey | #head | #penger
   , render_kind: #points | #lines | #triangles
-  , triangle_rasterizer_mode: #immediate | #tiled | #tiled_segmented
+  , triangle_rasterizer_mode: #immediate | #tiled
   }
 
 module lys_text_content = {
@@ -29,7 +29,7 @@ module lys_text_content = {
 
   def text_format () =
     "FPS: %ld\n"
-    ++ "triangle rasterizer mode: %[immediate|tiled|tiled and segmented (optimised for cpu)]\n"
+    ++ "triangle rasterizer mode: %[immediate|tiled]\n"
     ++ "t: switch rasterizer mode\n"
     ++ "\n"
     ++ "b: bunny\n"
@@ -48,7 +48,6 @@ module lys_text_content = {
       match s.triangle_rasterizer_mode
       case #immediate -> 0
       case #tiled -> 1
-      case #tiled_segmented -> 2
     in (i64.f32 render_duration, tr_mode)
 
   def text_colour = const argb.white
@@ -144,8 +143,7 @@ module lys : lys with text_content = lys_text_content.text_content = {
     else if key == SDLK_t
     then s with triangle_rasterizer_mode = match s.triangle_rasterizer_mode
            case #immediate -> #tiled
-           case #tiled -> #tiled_segmented
-           case #tiled_segmented -> #immediate
+           case #tiled -> #immediate
     else if key == SDLK_a
     then s with pos_delta.0 = -1
     else if key == SDLK_d
@@ -285,17 +283,5 @@ module lys : lys with text_content = lys_text_content.text_content = {
                         on_fragment
                         argb.black
            |> RT.unpack
-           |> (.0)
-         case #tiled_segmented ->
-           RTS.init {w = s.w, h = s.h} (argb.gray 0.2)
-           |> RTS.render s
-                         { primitive_type = #triangles
-                         , vertices = verts
-                         , indices = inds
-                         }
-                         on_vertex
-                         on_fragment
-                         argb.black
-           |> RTS.unpack
            |> (.0)
 }
