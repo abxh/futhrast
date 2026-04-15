@@ -9,6 +9,7 @@ open import "rasterize/point"
 open import "rasterize/line"
 open import "rasterize/triangle_imm"
 open import "rasterize/triangle_tiled"
+open import "rasterize/triangle_tiled_segmented"
 
 -- | configuration options
 module type ConfigSpec = {
@@ -94,11 +95,11 @@ module CustomRenderSetup (T: TriangleRasterizerSpec) (C: ConfigSpec) : RenderSet
          || f32.abs (signed_area_2) >= 1e-6 && C.triangle_winding_order == #neither
 
     local
-    def depth_cmp lhs rhs : #left | #right =
+    def depth_select lhs rhs : f32 =
       if C.depth_type == #reversed_z && (lhs f32.> rhs)
       || C.depth_type == #normal_z && (lhs f32.< rhs)
-      then #left
-      else #right
+      then lhs
+      else rhs
 
     def init 'target
              {w = w: i64, h = h: i64}
@@ -131,20 +132,20 @@ module CustomRenderSetup (T: TriangleRasterizerSpec) (C: ConfigSpec) : RenderSet
            vs
            |> map (\(v0) -> proj v0)
            |> map (\(v0) -> stw v0)
-           |> Point.rasterize (on_frag u) depth_cmp ne fb
+           |> Point.rasterize (on_frag u) depth_select ne fb
          case #lines ->
            (iota (length vs / 2))
            |> map (\i -> (vs[2 * i], vs[2 * i + 1]))
            |> map (\(v0, v1) -> (proj v0, proj v1))
            |> map (\(v0, v1) -> (stw v0, stw v1))
-           |> Line.rasterize (on_frag u) depth_cmp ne fb
+           |> Line.rasterize (on_frag u) depth_select ne fb
          case #triangles ->
            (iota (length vs / 3))
            |> map (\i -> (vs[3 * i], vs[3 * i + 1], vs[3 * i + 2]))
            |> map (\(v0, v1, v2) -> (proj v0, proj v1, proj v2))
            |> map (\(v0, v1, v2) -> (stw v0, stw v1, stw v2))
            |> filter (winding_order_check)
-           |> Triangle.rasterize (on_frag u) depth_cmp ne fb
+           |> Triangle.rasterize (on_frag u) depth_select ne fb
 
     def render_wireframe 'uniform 'vertex 'target [w] [h]
                          (u: uniform)
@@ -166,7 +167,7 @@ module CustomRenderSetup (T: TriangleRasterizerSpec) (C: ConfigSpec) : RenderSet
            |> expand (\_ -> 3) (\t j -> if j == 0 then (t.0, t.1) else if j == 1 then (t.1, t.2) else (t.2, t.0))
            |> map (\(v0, v1) -> (proj v0, proj v1))
            |> map (\(v0, v1) -> (stw v0, stw v1))
-           |> Line.rasterize (on_frag u) depth_cmp ne fb
+           |> Line.rasterize (on_frag u) depth_select ne fb
          case _ -> assert false fb
   }
 

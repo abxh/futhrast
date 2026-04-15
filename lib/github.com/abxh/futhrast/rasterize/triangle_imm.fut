@@ -9,12 +9,12 @@ import "../math/vec"
 module type TriangleRasterizerSpec =
   (V: VaryingSpec)
   -> {
-    -- | rasterize triangle given plot function, depth comparision function,
+    -- | rasterize triangle given plot function, depth selection function,
     -- triangle fragments, a neutral value for the target/depth buffers and
     -- the target/depth buffers themselves
     val rasterize 'target [n] [h] [w] :
       (plot: fragment V.t -> target)
-      -> (depth_cmp: f32 -> f32 -> #left | #right)
+      -> (depth_select: f32 -> f32 -> f32)
       -> (ne: (target, f32))
       -> [h][w](target, f32)
       -> [n](fragment V.t, fragment V.t, fragment V.t)
@@ -143,14 +143,10 @@ module ImmTriangleRasterizer : TriangleRasterizerSpec = \(V: VaryingSpec) ->
 
     def rasterize 'target [n] [h] [w]
                   (plot: (fragment V.t -> target))
-                  (depth_cmp: f32 -> f32 -> #left | #right)
+                  (depth_select: f32 -> f32 -> f32)
                   ((ne_target, ne_depth): (target, f32))
                   (dest: [h][w](target, f32))
                   (frags: [n](fragment V.t, fragment V.t, fragment V.t)) : [h][w](target, f32) =
-      let depth_cmp (d0: f32) (d1: f32) =
-        match depth_cmp d0 d1
-        case #left -> d0
-        case #right -> d1
       let (is, frag_values, depth_values) =
         frags
         |> map (\tri -> (round_fragment tri.0, round_fragment tri.1, round_fragment tri.2))
@@ -160,7 +156,7 @@ module ImmTriangleRasterizer : TriangleRasterizerSpec = \(V: VaryingSpec) ->
         |> map transform_fragment
         |> unzip3
       let depth_buffer = flatten dest |> map (.1) |> unflatten
-      let depth_buffer = reduce_by_index_2d (copy depth_buffer) depth_cmp ne_depth is depth_values
+      let depth_buffer = reduce_by_index_2d (copy depth_buffer) depth_select ne_depth is depth_values
       let (is, target_values) =
         zip3 is frag_values depth_values
         |> map (\((y, x), f, d) ->
@@ -199,9 +195,9 @@ module ImmTriangleRasterizerTest = {
                 , {pos = {x = f2.0, y = f2.1}, depth = 1, Z_inv = 1, attr = true}
                 ))
     let plot = (\(f: fragment bool) -> f.attr)
-    let depth_cmp (x: f32) (y: f32) = if x > y then #left else #right
+    let depth_select (x: f32) (y: f32) = if x > y then x else y
     let (target_buf, _) =
-      M.rasterize plot depth_cmp (false, -f32.inf) dest frags
+      M.rasterize plot depth_select (false, -f32.inf) dest frags
       |> flatten
       |> unzip
     in target_buf
