@@ -1,4 +1,5 @@
---  immediate-mode triangle rasterizer
+-- immediate-mode triangle rasterizer
+-- assumes non-zero triangle area and counterclockwise winding order
 
 import "../../../diku-dk/segmented/segmented"
 

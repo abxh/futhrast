@@ -3,6 +3,8 @@
 -- todo: fix overflow? for large framebuffers
 -- futher optimisation idea: keep track minimum/maximum depth while tile is being rasterized
 
+-- todo : fix broken broken code
+
 import "../../../diku-dk/segmented/segmented"
 import "../../../diku-dk/sorts/radix_sort"
 

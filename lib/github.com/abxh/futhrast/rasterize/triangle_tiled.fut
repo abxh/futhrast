@@ -1,6 +1,5 @@
 -- tiled triangle rasterizer
-
--- todo: do not plot before depth comparision
+-- assumes non-zero triangle area and counterclockwise winding order
 
 import "../../../diku-dk/segmented/segmented"
 
@@ -77,11 +76,9 @@ module TiledTriangleRasterizer : TriangleRasterizerSpec = \(V: VaryingSpec) ->
 
     open wcoeffs
 
-    def hist_count [n] k (as: [n]i64) = hist (+) 0i64 k as (replicate n 1)
-
     def div_ceil (n: i64) (m: i64) = n / m + i64.bool ((n > 0) == (m > 0) && (n % m) != 0)
 
-    def ilog2 (n: i64) : i64 = i64.i32 (63 - i64.clz n)
+    def div_ceil_positive (n: i64) (m: i64) = (n + (m - 1)) / m
 
     def calc_signed_tri_area_2 ((f0, f1, f2): triangle) : f32 =
       let (v0, v1, v2) = (f0.pos, f1.pos, f2.pos)
@@ -90,25 +87,11 @@ module TiledTriangleRasterizer : TriangleRasterizerSpec = \(V: VaryingSpec) ->
       let signed_area_2 = v0v1 `vec2f.cross` v0v2
       in signed_area_2
 
-    def ensure_cclockwise_winding_order ((f0, f1, f2): triangle) : triangle =
-      if calc_signed_tri_area_2 (f0, f1, f2) >= 0 then (f0, f1, f2) else (f0, f2, f1)
-
-    def calc_tri_bbox ((f0, f1, f2): triangle) : bbox i64 =
-      let (p0, p1, p2) = (f0.pos, f1.pos, f2.pos)
-      in { xmin = (f32.floor >-> i64.f32) (p0.x `f32.min` p1.x `f32.min` p2.x)
-         , ymin = (f32.floor >-> i64.f32) (p0.y `f32.min` p1.y `f32.min` p2.y)
-         , xmax = (f32.ceil >-> i64.f32) (p0.x `f32.max` p1.x `f32.max` p2.x)
-         , ymax = (f32.ceil >-> i64.f32) (p0.y `f32.max` p1.y `f32.max` p2.y)
-         }
-
-    def bbox_overlaps (a: bbox i64) (b: bbox i64) =
-      !(a.xmax <= b.xmin || a.xmin >= b.xmax || a.ymax <= b.ymin || a.ymin >= b.ymax)
-
     def fine_rasterize [n]
                        {h = _: i64, w = w: i64}
                        (tris: []triangle)
                        ((tile_ids, tri_indices): ([n]i64, [n]i64)) =
-      let bins_w = w `div_ceil` bin_size
+      let bins_w = w `div_ceil_positive` bin_size
       let tiles_per_bin =
         assert (fine_size * fine_size == fine_mask.num_bits) (coarse_size * coarse_size)
       in zip tile_ids tri_indices
@@ -146,9 +129,7 @@ module TiledTriangleRasterizer : TriangleRasterizerSpec = \(V: VaryingSpec) ->
                       let (f0, f1, f2) = tris[tri_index]
                       let verts = (f0.pos, f1.pos, f2.pos)
                       let area_2 = calc_signed_tri_area_2 (f0, f1, f2)
-                      let (w0, w1, w2) =
-                        calc_wcoeffs verts {x = f32.i64 x, y = f32.i64 y}
-                        |> vec3f.to_tuple
+                      let (w0, w1, w2) = calc_wcoeffs verts {x = f32.i64 x, y = f32.i64 y} |> vec3f.to_tuple
                       let (w0, w1, w2) = (w0 / area_2, w1 / area_2, w2 / area_2)
                       let w = (w0, w1, w2)
                       let pos = {x = f32.i64 x, y = f32.i64 y}
@@ -165,9 +146,20 @@ module TiledTriangleRasterizer : TriangleRasterizerSpec = \(V: VaryingSpec) ->
       let is_outside proj = proj w0 < 0 && proj w1 < 0 && proj w2 < 0 && proj w3 < 0
       in !(is_outside (.x) || is_outside (.y) || is_outside (.z))
 
+    def calc_tri_bbox ((f0, f1, f2): triangle) : bbox i64 =
+      let (p0, p1, p2) = (f0.pos, f1.pos, f2.pos)
+      in { xmin = (f32.floor >-> i64.f32) (p0.x `f32.min` p1.x `f32.min` p2.x)
+         , ymin = (f32.floor >-> i64.f32) (p0.y `f32.min` p1.y `f32.min` p2.y)
+         , xmax = (f32.ceil >-> i64.f32) (p0.x `f32.max` p1.x `f32.max` p2.x)
+         , ymax = (f32.ceil >-> i64.f32) (p0.y `f32.max` p1.y `f32.max` p2.y)
+         }
+
+    def bbox_overlaps (a: bbox i64) (b: bbox i64) =
+      !(a.xmax <= b.xmin || a.xmin >= b.xmax || a.ymax <= b.ymin || a.ymin >= b.ymax)
+
     def coarse_rasterize [n] {h = h: i64, w = w: i64} (tris: []triangle) ((bin_indices, tri_indices): ([n]i64, [n]i64)) =
       let fb_bbox = {xmin = 0, ymin = 0, xmax = w, ymax = h}
-      let bins_w = w `div_ceil` bin_size
+      let bins_w = w `div_ceil_positive` bin_size
       let tiles_per_bin =
         assert (coarse_size * coarse_size == coarse_mask.num_bits) (coarse_size * coarse_size)
       in zip bin_indices tri_indices
@@ -200,8 +192,8 @@ module TiledTriangleRasterizer : TriangleRasterizerSpec = \(V: VaryingSpec) ->
          |> unzip
 
     def bin_rasterize {h = h: i64, w = w: i64} (tris: []triangle) =
-      let bins_h = h `div_ceil` bin_size
-      let bins_w = w `div_ceil` bin_size
+      let bins_h = h `div_ceil_positive` bin_size
+      let bins_w = w `div_ceil_positive` bin_size
       in indices tris
          |> map (\tri_index ->
                    let tri_bbox = calc_tri_bbox tris[tri_index]
