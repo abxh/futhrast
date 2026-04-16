@@ -207,7 +207,6 @@ module lys : lys with text_content = lys_text_content.text_content = {
 
   local module R = RenderSetup Config Varying
   local module RT = CustomRenderSetup TiledTriangleRasterizer Config Varying
-  local module RTS = CustomRenderSetup TiledSegmentedTriangleRasterizer Config Varying
 
   local
   def on_vertex (s: state) (v: (f32, f32, f32)) : vertex_out Varying.t =
@@ -236,6 +235,7 @@ module lys : lys with text_content = lys_text_content.text_content = {
     in match s.render_kind
        case #points ->
          R.init {w = s.w, h = s.h} argb.black
+         |> R.unpack
          |> R.render s
                      { primitive_type = #points
                      , vertices = verts
@@ -243,11 +243,9 @@ module lys : lys with text_content = lys_text_content.text_content = {
                      }
                      on_vertex
                      on_fragment
-                     argb.black
-         |> R.unpack
          |> (.0)
        case #lines ->
-         R.init {w = s.w, h = s.h} argb.black
+         R.init {w = s.w, h = s.h} argb.black |> R.unpack
          |> R.render_wireframe s
                                { primitive_type = #triangles
                                , vertices = verts
@@ -255,13 +253,11 @@ module lys : lys with text_content = lys_text_content.text_content = {
                                }
                                on_vertex
                                on_fragment
-                               argb.black
-         |> R.unpack
          |> (.0)
        case #triangles ->
          match s.triangle_rasterizer_mode
          case #immediate ->
-           R.init {w = s.w, h = s.h} (argb.gray 0.4)
+           R.init {w = s.w, h = s.h} (argb.gray 0.4) |> R.unpack
            |> R.render s
                        { primitive_type = #triangles
                        , vertices = verts
@@ -269,11 +265,9 @@ module lys : lys with text_content = lys_text_content.text_content = {
                        }
                        on_vertex
                        on_fragment
-                       argb.black
-           |> R.unpack
            |> (.0)
          case #tiled ->
-           RT.init {w = s.w, h = s.h} (argb.gray 0.3)
+           RT.init {w = s.w, h = s.h} (argb.gray 0.3) |> R.unpack
            |> RT.render s
                         { primitive_type = #triangles
                         , vertices = verts
@@ -281,7 +275,5 @@ module lys : lys with text_content = lys_text_content.text_content = {
                         }
                         on_vertex
                         on_fragment
-                        argb.black
-           |> RT.unpack
            |> (.0)
 }

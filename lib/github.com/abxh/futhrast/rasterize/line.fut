@@ -14,9 +14,9 @@ module type LineRasterizerSpec =
       (plot: fragment V.t -> target)
       -> (depth_select: f32 -> f32 -> f32)
       -> (ne: (target, f32))
-      -> [h][w](target, f32)
+      -> ([h][w]target, [h][w]f32)
       -> [n](fragment V.t, fragment V.t)
-      -> [h][w](target, f32)
+      -> ([h][w]target, [h][w]f32)
   }
 
 -- | line rasterizer
@@ -37,13 +37,6 @@ module LineRasterizer : LineRasterizerSpec = \(V: VaryingSpec) ->
     def lerp_affine_f32 = F32.lerp_perspective_corrected_w_Z_inv_t
     def lerp_affine_attr = V.lerp_perspective_corrected_w_Z_inv_t
 
-    def round_fragment (f: fragment_generic f32 V.t) : fragment_generic i32 V.t =
-      { pos = {x = i32.f32 (f.pos.x + 0.5), y = i32.f32 (f.pos.y + 0.5)}
-      , depth = f.depth
-      , Z_inv = f.Z_inv
-      , attr = f.attr
-      }
-
     def compare_i32 (l: i32) (r: i32) : i32 =
       i32.bool (l < r) - i32.bool (l > r)
 
@@ -55,7 +48,8 @@ module LineRasterizer : LineRasterizerSpec = \(V: VaryingSpec) ->
     def get_line_size ((v0, v1): line) =
       let {x = x0, y = y0} = v0.pos
       let {x = x1, y = y1} = v1.pos
-      in 1 + i64.i32 (i32.max (i32.abs (x1 - x0)) (i32.abs (y1 - y0)))
+      let size = i64.i32 (i32.max (i32.abs (x1 - x0)) (i32.abs (y1 - y0)))
+      in i64.bool (size != 0) + size
 
     def get_point_in_line ((v0, v1): line) (i: i64) : fragment_generic i32 V.t =
       let (p0, p1) = (v0.pos, v1.pos)
@@ -83,7 +77,14 @@ module LineRasterizer : LineRasterizerSpec = \(V: VaryingSpec) ->
               let attr = lerp_affine_attr Z_inv (v0.attr, v0.Z_inv) (v1.attr, v1.Z_inv) t
               in {pos, depth, Z_inv, attr}
 
-    def transform_fragment (f: fragment_generic i32 V.t) =
+    def round_fragment (f: fragment_generic f32 V.t) : fragment_generic i32 V.t =
+      { pos = {x = i32.f32 (f.pos.x + 0.5), y = i32.f32 (f.pos.y + 0.5)}
+      , depth = f.depth
+      , Z_inv = f.Z_inv
+      , attr = f.attr
+      }
+
+    def unpack_fragment (f: fragment_generic i32 V.t) =
       let y = i64.i32 f.pos.y
       let x = i64.i32 f.pos.x
       let f' =
@@ -98,27 +99,24 @@ module LineRasterizer : LineRasterizerSpec = \(V: VaryingSpec) ->
                   (plot: (fragment V.t -> target))
                   (depth_select: f32 -> f32 -> f32)
                   ((ne_target, ne_depth): (target, f32))
-                  (dest: [h][w](target, f32))
-                  (frags: [n](fragment V.t, fragment V.t)) : ([h][w](target, f32)) =
+                  ((target_buffer, depth_buffer): ([h][w]target, [h][w]f32))
+                  (frags: [n](fragment V.t, fragment V.t)) : ([h][w]target, [h][w]f32) =
       let (is, frag_values, depth_values) =
         frags
         |> map (\l -> (round_fragment l.0, round_fragment l.1))
-        |> filter (\l -> get_line_size l > 1)
         |> expand get_line_size get_point_in_line
-        |> map transform_fragment
+        |> map unpack_fragment
         |> unzip3
-      let depth_buffer = flatten dest |> map (.1) |> unflatten
       let depth_buffer = reduce_by_index_2d (copy depth_buffer) depth_select ne_depth is depth_values
       let (is, target_values) =
-        zip3 is frag_values depth_values
-        |> map (\((y, x), f, d) ->
-                  if (0 <= x && x < w) && (0 <= y && y < h) && depth_buffer[y, x] == d
+        zip is frag_values
+        |> map (\((y, x), f) ->
+                  if (0 <= x && x < w) && (0 <= y && y < h) && depth_buffer[y, x] == f.depth
                   then ((y, x), plot f)
                   else ((-1, -1), ne_target))
         |> unzip2
-      let target_buffer = flatten dest |> map (.0) |> unflatten
       let target_buffer = scatter_2d (copy target_buffer) is target_values
-      in zip (flatten target_buffer) (flatten depth_buffer) |> unflatten
+      in (target_buffer, depth_buffer)
   }
 
 -- line rasterizer for testing purposes. can use the REPL for this
@@ -136,7 +134,8 @@ module LineRasterizerTest = {
   local module M = LineRasterizer (V)
 
   def rasterize_line_demo [n] (h: i64) (w: i64) (vs: [n]((f32, f32), (f32, f32))) : [h][w]i32 =
-    let dest = replicate h (replicate w (false, -f32.inf))
+    let target_buffer = replicate h (replicate w false)
+    let depth_buffer = replicate h (replicate w (-f32.inf))
     let frags =
       vs
       |> map (\(f0, f1) ->
@@ -144,13 +143,9 @@ module LineRasterizerTest = {
                 , {pos = {x = f1.0, y = f1.1}, depth = 1, Z_inv = 1, attr = true}
                 ))
     let plot = (\(f: fragment bool) -> f.attr)
-    let depth_select (x: f32) (y: f32) = if x > y then x else y
-    let (target_buf, _) =
-      M.rasterize plot depth_select (false, -f32.inf) dest frags
-      |> flatten
-      |> unzip
-    in target_buf
-       |> unflatten
+    let depth_select (lhs: f32) (rhs: f32) = if lhs > rhs then lhs else rhs
+    in M.rasterize plot depth_select (false, -f32.inf) (target_buffer, depth_buffer) frags
+       |> (.0)
        |> map (map i32.bool)
 }
 

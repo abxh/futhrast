@@ -9,7 +9,6 @@ open import "rasterize/point"
 open import "rasterize/line"
 open import "rasterize/triangle_imm"
 open import "rasterize/triangle_tiled"
-open import "rasterize/triangle_tiled_segmented"
 
 -- | configuration options
 module type ConfigSpec = {
@@ -35,10 +34,10 @@ module type RenderSetupSpec =
   (V: VaryingSpec)
   -> {
     -- initialize a framebuffer
-    val init 'target : {w: i64, h: i64} -> (default: target) -> [][](target, f32)
+    val init 'target : {w: i64, h: i64} -> (default: target) -> ([][](target, f32), target)
 
     -- unpack framebuffer
-    val unpack [w] [h] 'target : [h][w](target, f32) -> ([h][w]target, [h][w]f32)
+    val unpack [w] [h] 'target : ([h][w](target, f32), target) -> ([h][w]target, [h][w]f32, target)
 
     -- render primitives onto framebuffer
     val render 'uniform 'vertex 'target [w] [h] [v] [i] :
@@ -49,9 +48,8 @@ module type RenderSetupSpec =
              })
       -> (on_vert: vertex_shader uniform V.t vertex)
       -> (on_frag: fragment_shader uniform V.t target)
-      -> (ne: target)
-      -> [h][w](target, f32)
-      -> [h][w](target, f32)
+      -> ([h][w]target, [h][w]f32, target)
+      -> ([h][w]target, [h][w]f32, target)
 
     -- render primitive wireframes onto framebuffer
     val render_wireframe 'uniform 'vertex 'target [w] [h] [v] [i] :
@@ -62,9 +60,8 @@ module type RenderSetupSpec =
              })
       -> (on_vert: vertex_shader uniform V.t vertex)
       -> (on_frag: fragment_shader uniform V.t target)
-      -> (ne: target)
-      -> [h][w](target, f32)
-      -> [h][w](target, f32)
+      -> ([h][w]target, [h][w]f32, target)
+      -> ([h][w]target, [h][w]f32, target)
   }
 
 -- | rendering setup implementation
@@ -86,13 +83,23 @@ module CustomRenderSetup (T: TriangleRasterizerSpec) (C: ConfigSpec) : RenderSet
 
     local
     def winding_order_check (f0: fragment V.t, f1: fragment V.t, f2: fragment V.t) : bool =
-      let (v0, v1, v2) = (f0.pos, f1.pos, f2.pos)
-      let v0v1 = v1 vec2f.- v0
-      let v0v2 = v2 vec2f.- v0
-      let signed_area_2 = v0v1 `vec2f.cross` v0v2
-      in signed_area_2 > 1e-6 && C.triangle_winding_order == #counterclockwise
-         || signed_area_2 < -1e-6 && C.triangle_winding_order == #clockwise
-         || f32.abs (signed_area_2) >= 1e-6 && C.triangle_winding_order == #neither
+      if C.triangle_winding_order == #neither
+      then true
+      else let (v0, v1, v2) = (f0.pos, f1.pos, f2.pos)
+           let v0v1 = v1 vec2f.- v0
+           let v0v2 = v2 vec2f.- v0
+           let signed_area_2 = v0v1 `vec2f.cross` v0v2
+           in signed_area_2 > 0 && C.triangle_winding_order == #counterclockwise
+              || signed_area_2 < 0 && C.triangle_winding_order == #clockwise
+
+    local
+    def bbox_area_check (f0: fragment V.t, f1: fragment V.t, f2: fragment V.t) : bool =
+      let (p0, p1, p2) = (f0.pos, f1.pos, f2.pos)
+      let xmin = p0.x `f32.min` p1.x `f32.min` p2.x
+      let ymin = p0.y `f32.min` p1.y `f32.min` p2.y
+      let xmax = p0.x `f32.max` p1.x `f32.max` p2.x
+      let ymax = p0.y `f32.max` p1.y `f32.max` p2.y
+      in (xmax - xmin > 1.0f32) && (ymax - ymin > 1.0f32)
 
     local
     def depth_select lhs rhs : f32 =
@@ -103,72 +110,70 @@ module CustomRenderSetup (T: TriangleRasterizerSpec) (C: ConfigSpec) : RenderSet
 
     def init 'target
              {w = w: i64, h = h: i64}
-             (default: target) : [][](target, f32) =
+             (default: target) : ([][](target, f32), target) =
       let ne = if C.depth_type == #reversed_z then (default, -f32.inf) else (default, f32.inf)
-      in replicate h (replicate w (ne))
+      in (replicate h (replicate w (ne)), default)
 
-    def unpack [w] [h] 'target (fb: [h][w](target, f32)) : ([h][w]target, [h][w]f32) =
+    def unpack [w] [h] 'target ((fb, ne_target): ([h][w](target, f32), target)) : ([h][w]target, [h][w]f32, target) =
       let (target_buf, depth_buf): ([h * w]target, [h * w]f32) =
         fb
         |> flatten
         |> unzip
-      in (unflatten target_buf, unflatten depth_buf)
+      in (unflatten target_buf, unflatten depth_buf, ne_target)
 
     def render 'uniform 'vertex 'target [w] [h]
                (u: uniform)
                (d: model_data vertex)
                (on_vert: vertex_shader uniform V.t vertex)
                (on_frag: fragment_shader uniform V.t target)
-               (ne: target)
-               (fb: [h][w](target, f32)) : [h][w](target, f32) =
-      let (stw, ne) =
-        let stw = map_screen_to_window {h = length fb, w = length fb[0]}
-        let ne = if C.depth_type == #reversed_z then (ne, -f32.inf) else (ne, f32.inf)
-        in (stw, ne)
+               ((target_buf, depth_buf, ne_target): ([h][w]target, [h][w]f32, target)) : ([h][w]target, [h][w]f32, target) =
+      let stw = map_screen_to_window {h, w}
+      let ne_depth = if C.depth_type == #reversed_z then -f32.inf else f32.inf
       let vs = map (on_vert u) d.vertices
       let vs = map (\i -> vs[i]) d.indices
-      in match d.primitive_type
-         case #points ->
-           vs
-           |> map (\(v0) -> proj v0)
-           |> map (\(v0) -> stw v0)
-           |> Point.rasterize (on_frag u) depth_select ne fb
-         case #lines ->
-           (iota (length vs / 2))
-           |> map (\i -> (vs[2 * i], vs[2 * i + 1]))
-           |> map (\(v0, v1) -> (proj v0, proj v1))
-           |> map (\(v0, v1) -> (stw v0, stw v1))
-           |> Line.rasterize (on_frag u) depth_select ne fb
-         case #triangles ->
-           (iota (length vs / 3))
-           |> map (\i -> (vs[3 * i], vs[3 * i + 1], vs[3 * i + 2]))
-           |> map (\(v0, v1, v2) -> (proj v0, proj v1, proj v2))
-           |> map (\(v0, v1, v2) -> (stw v0, stw v1, stw v2))
-           |> filter (winding_order_check)
-           |> Triangle.rasterize (on_frag u) depth_select ne fb
+      let (target_buf, depth_buf) =
+        match d.primitive_type
+        case #points ->
+          vs
+          |> map (\(v0) -> proj v0)
+          |> map (\(v0) -> stw v0)
+          |> Point.rasterize (on_frag u) depth_select (ne_target, ne_depth) (target_buf, depth_buf)
+        case #lines ->
+          (iota (length vs / 2))
+          |> map (\i -> (vs[2 * i], vs[2 * i + 1]))
+          |> map (\(v0, v1) -> (proj v0, proj v1))
+          |> map (\(v0, v1) -> (stw v0, stw v1))
+          |> Line.rasterize (on_frag u) depth_select (ne_target, ne_depth) (target_buf, depth_buf)
+        case #triangles ->
+          (iota (length vs / 3))
+          |> map (\i -> (vs[3 * i], vs[3 * i + 1], vs[3 * i + 2]))
+          |> map (\(v0, v1, v2) -> (proj v0, proj v1, proj v2))
+          |> map (\(v0, v1, v2) -> (stw v0, stw v1, stw v2))
+          |> filter (\tri -> winding_order_check tri && bbox_area_check tri)
+          |> Triangle.rasterize (on_frag u) depth_select (ne_target, ne_depth) (target_buf, depth_buf)
+      in (target_buf, depth_buf, ne_target)
 
     def render_wireframe 'uniform 'vertex 'target [w] [h]
                          (u: uniform)
                          (d: model_data vertex)
                          (on_vert: vertex_shader uniform V.t vertex)
                          (on_frag: fragment_shader uniform V.t target)
-                         (ne: target)
-                         (fb: [h][w](target, f32)) : [h][w](target, f32) =
-      let (stw, ne) =
-        let stw = map_screen_to_window {h = length fb, w = length fb[0]}
-        let ne = if C.depth_type == #reversed_z then (ne, -f32.inf) else (ne, f32.inf)
-        in (stw, ne)
+                         ((target_buf, depth_buf, ne_target): ([h][w]target, [h][w]f32, target)) : ([h][w]target, [h][w]f32, target) =
+      let stw = map_screen_to_window {h, w}
+      let ne_depth = if C.depth_type == #reversed_z then -f32.inf else f32.inf
       let vs = map (on_vert u) d.vertices
       let vs = map (\i -> vs[i]) d.indices
-      in match d.primitive_type
-         case #triangles ->
-           (iota (length vs / 3))
-           |> map (\i -> (vs[3 * i], vs[3 * i + 1], vs[3 * i + 2]))
-           |> expand (\_ -> 3) (\t j -> if j == 0 then (t.0, t.1) else if j == 1 then (t.1, t.2) else (t.2, t.0))
-           |> map (\(v0, v1) -> (proj v0, proj v1))
-           |> map (\(v0, v1) -> (stw v0, stw v1))
-           |> Line.rasterize (on_frag u) depth_select ne fb
-         case _ -> assert false fb
+      let (target_buf, depth_buf) =
+        match d.primitive_type
+        case #triangles ->
+          (iota (length vs / 3))
+          |> map (\i -> (vs[3 * i], vs[3 * i + 1], vs[3 * i + 2]))
+          |> expand (\_ -> 3) (\t j -> if j == 0 then (t.0, t.1) else if j == 1 then (t.1, t.2) else (t.2, t.0))
+          |> map (\(v0, v1) -> (proj v0, proj v1))
+          |> map (\(v0, v1) -> (stw v0, stw v1))
+          |> Line.rasterize (on_frag u) depth_select (ne_target, ne_depth) (target_buf, depth_buf)
+        case _ -> assert false (target_buf, depth_buf)
+      in (target_buf, depth_buf, ne_target)
   }
 
 -- | Default renderer setup

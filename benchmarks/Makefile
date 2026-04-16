@@ -1,3 +1,5 @@
+HIP_ENV = C_INCLUDE_PATH=/opt/rocm/include:$${C_INCLUDE_PATH} \
+          LIBRARY_PATH=/opt/rocm/lib:$${LIBRARY_PATH}
 
 all: build run
 
@@ -7,78 +9,34 @@ build:
 	./extract_obj_data ../african_head.obj
 	./extract_obj_data ../monkey.obj
 	./extract_obj_data ../penger.obj
-	rm extract_obj_data
+	rm -f extract_obj_data
 
-run: run-point run-line run-triangle-imm run-triangle-tiled run-triangle-tiled-segmented
-	
-run-point:
-	futhark bench --backend=multicore point.fut
-	
-	futhark bench --backend=opencl point.fut
-	
-	C_INCLUDE_PATH=/opt/rocm/include:$(C_INCLUDE_PATH) \
-	LIBRARY_PATH=/opt/rocm/lib:$(LIBRARY_PATH) \
-	futhark bench --backend=hip point.fut
-	
-	rm point.c point
+define RUN_TEMPLATE
+run_$(1):
+	futhark bench --backend=multicore $(1).fut
 
-run-line:
-	futhark bench --backend=multicore line.fut
-	
-	futhark bench --backend=opencl line.fut
-	
-	C_INCLUDE_PATH=/opt/rocm/include:$(C_INCLUDE_PATH) \
-	LIBRARY_PATH=/opt/rocm/lib:$(LIBRARY_PATH) \
-	futhark bench --backend=hip line.fut
-	
-	rm line.c line
+	$(if $(findstring tiled,$(1)),futhark autotune --backend=opencl $(1).fut;)
+	futhark bench --backend=opencl $(1).fut
 
-run-triangle-imm:
-	futhark bench --backend=multicore triangle_imm.fut
-	
-	futhark bench --backend=opencl triangle_imm.fut
-	
-	C_INCLUDE_PATH=/opt/rocm/include:$(C_INCLUDE_PATH) \
-	LIBRARY_PATH=/opt/rocm/lib:$(LIBRARY_PATH) \
-	futhark bench --backend=hip triangle_imm.fut
-	
-	rm triangle_imm.c triangle_imm
+	$(if $(findstring tiled,$(1)),$(HIP_ENV) futhark autotune --backend=hip $(1).fut;)
+	$(HIP_ENV) futhark bench --backend=hip $(1).fut
 
-run-triangle-tiled:
-	futhark bench --backend=multicore triangle_tiled.fut
-	
-	futhark autotune --backend=opencl triangle_tiled.fut
-	futhark bench --backend=opencl triangle_tiled.fut
-	
-	C_INCLUDE_PATH=/opt/rocm/include:$(C_INCLUDE_PATH) \
-	LIBRARY_PATH=/opt/rocm/lib:$(LIBRARY_PATH) \
-	futhark autotune --backend=hip triangle_tiled.fut
-	C_INCLUDE_PATH=/opt/rocm/include:$(C_INCLUDE_PATH) \
-	LIBRARY_PATH=/opt/rocm/lib:$(LIBRARY_PATH) \
-	futhark bench --backend=hip triangle_tiled.fut
-	
-	rm triangle_tiled.c triangle_tiled triangle_tiled.fut.tuning
+	rm -f $(1).c $(1) $(1).fut.tuning
+endef
 
-run-triangle-tiled-segmented:
-	futhark bench --backend=multicore triangle_tiled_segmented.fut
-	
-	futhark autotune --backend=opencl triangle_tiled_segmented.fut
-	futhark bench --backend=opencl triangle_tiled_segmented.fut
-	
-	C_INCLUDE_PATH=/opt/rocm/include:$(C_INCLUDE_PATH) \
-	LIBRARY_PATH=/opt/rocm/lib:$(LIBRARY_PATH) \
-	futhark autotune --backend=hip triangle_tiled_segmented.fut
-	C_INCLUDE_PATH=/opt/rocm/include:$(C_INCLUDE_PATH) \
-	LIBRARY_PATH=/opt/rocm/lib:$(LIBRARY_PATH) \
-	futhark bench --backend=hip triangle_tiled_segmented.fut
-	
-	rm triangle_tiled_segmented.c triangle_tiled_segmented triangle_tiled_segmented.fut.tuning
+run: run_point run_line run_triangle_imm run_triangle_tiled run_triangle_tiled_segmented
+
+run_point: $(eval $(call RUN_TEMPLATE,point))
+
+run_line: $(eval $(call RUN_TEMPLATE,line))
+
+run_triangle_imm: $(eval $(call RUN_TEMPLATE,triangle_imm))
+
+run_triangle_tiled: $(eval $(call RUN_TEMPLATE,triangle_tiled))
+
+run_triangle_tiled_segmented: $(eval $(call RUN_TEMPLATE,triangle_tiled_segmented))
 
 clean:
-	rm -f extract_obj_data
-	rm -f *.in
-	rm -f point.c point point.fut.tuning
-	rm -f line.c line line.fut.tuning
-	rm -f triangle_imm.c triangle_imm triangle_imm.fut.tuning
-	rm -f triangle_tiled.c triangle_tiled triangle_tiled.fut.tuning
-	rm -f triangle_tiled_segmented.c triangle_tiled_segmented triangle_tiled_segmented.fut.tuning
+	rm -f extract_obj_data *.in
+	rm -f *.c point line triangle_imm triangle_tiled triangle_tiled_segmented
+	rm -f *.fut.tuning

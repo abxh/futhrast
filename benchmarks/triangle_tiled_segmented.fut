@@ -65,7 +65,7 @@ def on_fragment (_: state) (f: fragment Varying.t) : argb.colour =
 
 def main [n] (vx: [n]f32, vy: [n]f32, vz: [n]f32, inds: []i64) =
   let verts = zip3 vx vy vz
-  in R.init {w = 1024, h = 1024} argb.black
+  in R.init {w = 1024, h = 1024} argb.black |> R.unpack
      |> R.render s
                  { primitive_type = #triangles
                  , vertices = verts
@@ -73,6 +73,4 @@ def main [n] (vx: [n]f32, vy: [n]f32, vz: [n]f32, inds: []i64) =
                  }
                  on_vertex
                  on_fragment
-                 argb.black
-     |> R.unpack
      |> (.0)

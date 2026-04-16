@@ -81,6 +81,7 @@ module type bitmask = {
   val find_ith_set_bit : t -> i64 -> i64
 
   val from_pred : (i64 -> bool) -> t
+  val from_pred_par : (i64 -> bool) -> t
   val to_array : t -> [num_bits]bool
 }
 
@@ -107,6 +108,11 @@ module bitmask_1 (T: integral) (F: {val find_ith_set_bit : T.t -> i64 -> i64}) :
   def find_ith_set_bit = F.find_ith_set_bit
 
   def from_pred (f: i64 -> bool) : t =
+    loop b = empty
+    for pos in 0..<num_bits do
+      set b pos (f pos)
+
+  def from_pred_par (f: i64 -> bool) : t =
     iota num_bits
     |> map f
     |> zip (iota num_bits)
@@ -155,6 +161,11 @@ module cat_bitmask (L: bitmask) (R: bitmask) : bitmask = {
        else R.find_ith_set_bit r (i - l_size) + L.num_bits
 
   def from_pred (f: i64 -> bool) : t =
+    let l_pred i = f i
+    let r_pred i = f (i + L.num_bits)
+    in (L.from_pred l_pred, R.from_pred r_pred)
+
+  def from_pred_par (f: i64 -> bool) : t =
     let l_pred i = f i
     let r_pred i = f (i + L.num_bits)
     in (L.from_pred l_pred, R.from_pred r_pred)
