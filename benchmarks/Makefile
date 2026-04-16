@@ -4,7 +4,7 @@ HIP_ENV = C_INCLUDE_PATH=/opt/rocm/include:$${C_INCLUDE_PATH} \
 all: build run
 
 build:
-	g++ -std=c++20 setup.cpp ../lib/github.com/abxh/lys/file_parsers/obj/tiny_obj_loader.cpp -o extract_obj_data
+	g++ -std=c++20 extract_obj_data.cpp ../lib/github.com/abxh/lys/file_parsers/obj/tiny_obj_loader.cpp -o extract_obj_data
 	./extract_obj_data ../bunny.obj
 	./extract_obj_data ../african_head.obj
 	./extract_obj_data ../monkey.obj
