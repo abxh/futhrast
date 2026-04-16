@@ -1,5 +1,4 @@
 -- immediate-mode triangle rasterizer
--- assumes non-zero triangle area and counterclockwise winding order
 
 import "../../../diku-dk/segmented/segmented"
 
@@ -47,6 +46,9 @@ module ImmTriangleRasterizer : TriangleRasterizerSpec = \(V: VaryingSpec) ->
       let signed_area_2 = v0v1 `vec2f.cross` v0v2
       in signed_area_2
 
+    def ensure_cclockwise_winding_order ((f0, f1, f2): triangle) : triangle =
+      if calc_signed_tri_area_2 (f0.pos, f1.pos, f2.pos) >= 0 then (f0, f1, f2) else (f0, f2, f1)
+
     def calc_barycentric_coeffs ((v0, v1, v2): (vec2f.t, vec2f.t, vec2f.t)) (p: vec2f.t) : (f32, f32, f32) =
       let signed_area_2 = calc_signed_tri_area_2 (v0, v1, v2)
       let v1p = p vec2f.- v1
@@ -58,12 +60,15 @@ module ImmTriangleRasterizer : TriangleRasterizerSpec = \(V: VaryingSpec) ->
       let w2 = 1 - w0 - w1
       in (w0, w1, w2)
 
-    def get_horizontal_line_size (((pl, pr), _): ((vec2i32.t, vec2i32.t), triangle)) : i64 =
+    def get_horizontal_line_size (((pl, pr), _): ((vec2i32.t, vec2i32.t), i64)) : i64 =
       -- exclusive range to fullfill top-left edge rule
       i64.i32 (pr.x - pl.x)
 
-    def get_point_in_horizontal_line (((pl, _), (f0, f1, f2)): ((vec2i32.t, vec2i32.t), triangle)) (i: i64) =
+    def get_point_in_horizontal_line (tris: [](fragment V.t, fragment V.t, fragment V.t))
+                                     (((pl, _), tri_index): ((vec2i32.t, vec2i32.t), i64))
+                                     (i: i64) =
       let pos = {x = pl.x + i32.i64 i, y = pl.y}
+      let (f0, f1, f2) = tris[tri_index]
       let (w0, w1, w2) = calc_barycentric_coeffs (f0.pos, f1.pos, f2.pos) (vec2i32.map (f32.i32) pos)
       -- workaround to fix rounding errors resulting in glitched pixels:
       let w0 = f32.max 0 (f32.min 1 w0)
@@ -89,7 +94,9 @@ module ImmTriangleRasterizer : TriangleRasterizerSpec = \(V: VaryingSpec) ->
       let dy = b.y - a.y
       in if dy == 0 then 0 else f32.i32 dx / f32.i32 dy
 
-    def num_lines_in_triangle ((f0, f1, f2): triangle) : i64 =
+    def num_lines_in_triangle ( ((f0, f1, f2): (fragment V.t, fragment V.t, fragment V.t))
+                              , (_: i64)
+                              ) : i64 =
       let (v0, v1, v2) = sort_y_ascending (f0.pos, f1.pos, f2.pos)
       let top = i64.f32 (v2.y + 0.5)
       let middle = i64.f32 (v1.y + 0.5)
@@ -98,7 +105,10 @@ module ImmTriangleRasterizer : TriangleRasterizerSpec = \(V: VaryingSpec) ->
       let offset = i64.bool (bottom != middle)
       in offset + top - bottom
 
-    def get_line_in_triangle ((f0, f1, f2): triangle) (i: i64) =
+    def get_line_in_triangle ( ((f0, f1, f2): (fragment V.t, fragment V.t, fragment V.t))
+                             , (tri_index: i64)
+                             )
+                             (i: i64) =
       let (v0, v1, v2) = sort_y_ascending (f0.pos, f1.pos, f2.pos)
       let (v0, v1, v2) =
         ( vec2f.map i32.f32 (v0 vec2f.+ vec2f.replicate 0.5)
@@ -114,7 +124,7 @@ module ImmTriangleRasterizer : TriangleRasterizerSpec = \(V: VaryingSpec) ->
               let p0 = {x = v0.x + i32.f32 (f32.round (sl0 * f32.i32 dy)), y}
               let p1 = {x = v0.x + i32.f32 (f32.round (sl1 * f32.i32 dy)), y}
               let (pl, pr) = if p0.x <= p1.x then (p0, p1) else (p1, p0)
-              in ((pl, pr), (f0, f1, f2))
+              in ((pl, pr), tri_index)
          else -- lower half
               let sl0 = dxdy v1 v2
               let sl1 = dxdy v0 v2
@@ -122,7 +132,7 @@ module ImmTriangleRasterizer : TriangleRasterizerSpec = \(V: VaryingSpec) ->
               let p0 = {x = v1.x + i32.f32 (f32.round (sl0 * f32.i32 dy)), y}
               let p1 = {x = v0.x + i32.f32 (f32.round (sl1 * f32.i64 i)), y}
               let (pl, pr) = if p0.x <= p1.x then (p0, p1) else (p1, p0)
-              in ((pl, pr), (f0, f1, f2))
+              in ((pl, pr), tri_index)
 
     def unpack_fragment (f: fragment V.t) =
       let y = i64.f32 f.pos.y
@@ -134,11 +144,12 @@ module ImmTriangleRasterizer : TriangleRasterizerSpec = \(V: VaryingSpec) ->
                   (depth_select: f32 -> f32 -> f32)
                   ((ne_target, ne_depth): (target, f32))
                   ((target_buffer, depth_buffer): ([h][w]target, [h][w]f32))
-                  (frags: [n](fragment V.t, fragment V.t, fragment V.t)) : ([h][w]target, [h][w]f32) =
+                  (tris: [n](fragment V.t, fragment V.t, fragment V.t)) : ([h][w]target, [h][w]f32) =
+      let tris = tris |> map ensure_cclockwise_winding_order
       let (is, frag_values, depth_values) =
-        frags
+        zip tris (indices tris)
         |> expand num_lines_in_triangle get_line_in_triangle
-        |> expand get_horizontal_line_size get_point_in_horizontal_line
+        |> expand get_horizontal_line_size (get_point_in_horizontal_line tris)
         |> map unpack_fragment
         |> unzip3
       let depth_buffer = reduce_by_index_2d (copy depth_buffer) depth_select ne_depth is depth_values

@@ -80,12 +80,14 @@ module TiledTriangleRasterizer : TriangleRasterizerSpec = \(V: VaryingSpec) ->
 
     def div_ceil_positive (n: i64) (m: i64) = (n + (m - 1)) / m
 
-    def calc_signed_tri_area_2 ((f0, f1, f2): triangle) : f32 =
-      let (v0, v1, v2) = (f0.pos, f1.pos, f2.pos)
+    def calc_signed_tri_area_2 ((v0, v1, v2): (vec2f.t, vec2f.t, vec2f.t)) : f32 =
       let v0v1 = v1 vec2f.- v0
       let v0v2 = v2 vec2f.- v0
       let signed_area_2 = v0v1 `vec2f.cross` v0v2
       in signed_area_2
+
+    def ensure_cclockwise_winding_order ((f0, f1, f2): triangle) : triangle =
+      if calc_signed_tri_area_2 (f0.pos, f1.pos, f2.pos) >= 0 then (f0, f1, f2) else (f0, f2, f1)
 
     def fine_rasterize [n]
                        {h = _: i64, w = w: i64}
@@ -128,7 +130,7 @@ module TiledTriangleRasterizer : TriangleRasterizerSpec = \(V: VaryingSpec) ->
                       let y = pixel_y + tile_ymin
                       let (f0, f1, f2) = tris[tri_index]
                       let verts = (f0.pos, f1.pos, f2.pos)
-                      let area_2 = calc_signed_tri_area_2 (f0, f1, f2)
+                      let area_2 = calc_signed_tri_area_2 verts
                       let (w0, w1, w2) = calc_wcoeffs verts {x = f32.i64 x, y = f32.i64 y} |> vec3f.to_tuple
                       let (w0, w1, w2) = (w0 / area_2, w1 / area_2, w2 / area_2)
                       let w = (w0, w1, w2)
@@ -221,11 +223,12 @@ module TiledTriangleRasterizer : TriangleRasterizerSpec = \(V: VaryingSpec) ->
                   (depth_select: f32 -> f32 -> f32)
                   ((ne_target, ne_depth): (target, f32))
                   ((target_buffer, depth_buffer): ([h][w]target, [h][w]f32))
-                  (frags: [](fragment V.t, fragment V.t, fragment V.t)) : ([h][w]target, [h][w]f32) =
+                  (tris: [](fragment V.t, fragment V.t, fragment V.t)) : ([h][w]target, [h][w]f32) =
+      let tris = tris |> map ensure_cclockwise_winding_order
       let (is, frag_values, depth_values) =
-        bin_rasterize {h, w} frags
-        |> coarse_rasterize {h, w} frags
-        |> fine_rasterize {h, w} frags
+        bin_rasterize {h, w} tris
+        |> coarse_rasterize {h, w} tris
+        |> fine_rasterize {h, w} tris
         |> unzip3
       let depth_buffer = reduce_by_index_2d (copy depth_buffer) depth_select ne_depth is depth_values
       let (is, target_values) =
