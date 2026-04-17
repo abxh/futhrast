@@ -93,13 +93,25 @@ module CustomRenderSetup (T: TriangleRasterizerSpec) (C: ConfigSpec) : RenderSet
               || signed_area_2 < 0 && C.triangle_winding_order == #clockwise
 
     local
-    def bbox_area_check (f0: fragment V.t, f1: fragment V.t, f2: fragment V.t) : bool =
+    def line_bbox_check {w = w: i64, h = h: i64} (f0: fragment V.t, f1: fragment V.t) : bool =
+      let (p0, p1) = (f0.pos, f1.pos)
+      let xmin = (p0.x `f32.min` p1.x) |> (f32.floor >-> i64.f32)
+      let ymin = (p0.y `f32.min` p1.y) |> (f32.floor >-> i64.f32)
+      let xmax = (p0.x `f32.max` p1.x) |> (f32.ceil >-> i64.f32)
+      let ymax = (p0.y `f32.max` p1.y) |> (f32.ceil >-> i64.f32)
+      let area_check = (xmax - xmin > 1) && (ymax - ymin > 1)
+      let overlap_check = !(w <= xmin || 0 >= xmax || h <= ymin || 0 >= ymax)
+      in area_check && overlap_check
+
+    local
+    def tri_bbox_area_check (f0: fragment V.t, f1: fragment V.t, f2: fragment V.t) : bool =
       let (p0, p1, p2) = (f0.pos, f1.pos, f2.pos)
-      let xmin = p0.x `f32.min` p1.x `f32.min` p2.x
-      let ymin = p0.y `f32.min` p1.y `f32.min` p2.y
-      let xmax = p0.x `f32.max` p1.x `f32.max` p2.x
-      let ymax = p0.y `f32.max` p1.y `f32.max` p2.y
-      in (xmax - xmin > 1.0f32) && (ymax - ymin > 1.0f32)
+      let xmin = (p0.x `f32.min` p1.x `f32.min` p2.x) |> (f32.floor >-> i64.f32)
+      let ymin = (p0.y `f32.min` p1.y `f32.min` p2.y) |> (f32.floor >-> i64.f32)
+      let xmax = (p0.x `f32.max` p1.x `f32.max` p2.x) |> (f32.ceil >-> i64.f32)
+      let ymax = (p0.y `f32.max` p1.y `f32.max` p2.y) |> (f32.ceil >-> i64.f32)
+      let area_check = (xmax - xmin > 1) && (ymax - ymin > 1)
+      in area_check
 
     local
     def depth_select lhs rhs : f32 =
@@ -115,10 +127,7 @@ module CustomRenderSetup (T: TriangleRasterizerSpec) (C: ConfigSpec) : RenderSet
       in (replicate h (replicate w (ne)), default)
 
     def unpack [w] [h] 'target ((fb, ne_target): ([h][w](target, f32), target)) : ([h][w]target, [h][w]f32, target) =
-      let (target_buf, depth_buf): ([h * w]target, [h * w]f32) =
-        fb
-        |> flatten
-        |> unzip
+      let (target_buf, depth_buf) = fb |> flatten |> unzip
       in (unflatten target_buf, unflatten depth_buf, ne_target)
 
     def render 'uniform 'vertex 'target [w] [h]
@@ -143,14 +152,15 @@ module CustomRenderSetup (T: TriangleRasterizerSpec) (C: ConfigSpec) : RenderSet
           |> map (\i -> (vs[2 * i], vs[2 * i + 1]))
           |> map (\(v0, v1) -> (proj v0, proj v1))
           |> map (\(v0, v1) -> (stw v0, stw v1))
+          |> filter (\tri -> line_bbox_check {w, h} tri)
           |> Line.rasterize (on_frag u) depth_select (ne_target, ne_depth) (target_buf, depth_buf)
         case #triangles ->
           (iota (length vs / 3))
           |> map (\i -> (vs[3 * i], vs[3 * i + 1], vs[3 * i + 2]))
           |> map (\(v0, v1, v2) -> (proj v0, proj v1, proj v2))
           |> map (\(v0, v1, v2) -> (stw v0, stw v1, stw v2))
-          |> filter (\tri -> winding_order_check tri && bbox_area_check tri)
-          |> Triangle.rasterize (on_frag u) depth_select (ne_target, ne_depth) (target_buf, depth_buf)
+          |> filter (\tri -> winding_order_check tri && tri_bbox_area_check tri)
+          |> Triangle.rasterize (on_frag u) depth_select ((on_frag u (proj vs[1])), ne_depth) (target_buf, depth_buf)
       in (target_buf, depth_buf, ne_target)
 
     def render_wireframe 'uniform 'vertex 'target [w] [h]
@@ -171,6 +181,7 @@ module CustomRenderSetup (T: TriangleRasterizerSpec) (C: ConfigSpec) : RenderSet
           |> expand (\_ -> 3) (\t j -> if j == 0 then (t.0, t.1) else if j == 1 then (t.1, t.2) else (t.2, t.0))
           |> map (\(v0, v1) -> (proj v0, proj v1))
           |> map (\(v0, v1) -> (stw v0, stw v1))
+          |> filter (\tri -> line_bbox_check {w, h} tri)
           |> Line.rasterize (on_frag u) depth_select (ne_target, ne_depth) (target_buf, depth_buf)
         case _ -> assert false (target_buf, depth_buf)
       in (target_buf, depth_buf, ne_target)

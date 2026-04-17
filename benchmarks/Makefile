@@ -4,7 +4,10 @@ HIP_ENV = C_INCLUDE_PATH=/opt/rocm/include:$${C_INCLUDE_PATH} \
 all: build run
 
 build:
-	g++ -std=c++20 extract_obj_data.cpp ../lib/github.com/abxh/lys/file_parsers/obj/tiny_obj_loader.cpp -o extract_obj_data
+	g++ -std=c++20 \
+		../lib/github.com/abxh/lys/utils/tiny_obj_loader/tiny_obj_loader.cpp \
+		extract_obj_data.cpp \
+		-o extract_obj_data
 	./extract_obj_data ../bunny.obj
 	./extract_obj_data ../african_head.obj
 	./extract_obj_data ../monkey.obj
@@ -15,10 +18,8 @@ define RUN_TEMPLATE
 run_$(1):
 	futhark bench --backend=multicore $(1).fut
 
-	$(if $(findstring tiled,$(1)),futhark autotune --backend=opencl $(1).fut;)
 	futhark bench --backend=opencl $(1).fut
 
-	$(if $(findstring tiled,$(1)),$(HIP_ENV) futhark autotune --backend=hip $(1).fut;)
 	$(HIP_ENV) futhark bench --backend=hip $(1).fut
 
 	rm -f $(1).c $(1) $(1).fut.tuning
@@ -40,3 +41,5 @@ clean:
 	rm -f extract_obj_data *.in
 	rm -f *.c point line triangle_imm triangle_tiled triangle_tiled_segmented
 	rm -f *.fut.tuning
+	rm -f *.json
+	rm -rf *.prof
