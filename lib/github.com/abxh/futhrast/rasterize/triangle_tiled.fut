@@ -4,8 +4,10 @@
 import "../../../diku-dk/segmented/segmented"
 import "../../../diku-dk/sorts/radix_sort"
 
-import "../types"
 import "../utils/bitmask"
+import "../utils/segmented_radix_sort"
+
+import "../types"
 import "../math/vec"
 
 -- | triangle rasterizer specfication
@@ -42,11 +44,11 @@ module TiledTriangleRasterizer : TriangleRasterizerSpec = \(V: VaryingSpec) ->
       , ymax: a
       }
 
-    module coarse_mask = bitmask_256
-    module fine_mask = bitmask_64
+    module coarse_mask = bitmask_64
+    module fine_mask = bitmask_256
 
     local def bin_size : i64 = 128i64
-    local def fine_size : i64 = 8i64
+    local def fine_size : i64 = 16i64
     local def coarse_size : i64 = bin_size / fine_size
 
     def barycentric = F32.barycentric
@@ -154,65 +156,91 @@ module TiledTriangleRasterizer : TriangleRasterizerSpec = \(V: VaryingSpec) ->
       let is_outside proj = proj w0 < 0 && proj w1 < 0 && proj w2 < 0 && proj w3 < 0
       in !(is_outside (.x) || is_outside (.y) || is_outside (.z))
 
-    def coarse_rasterize [n] {h = h: i64, w = w: i64} (tris: []triangle) ((bin_indices, tri_indices): ([n]u8, [n]i64)) =
+    def calc_segment_flags [n] (is: [n]u8) : [n]bool =
+      if n == 0
+      then replicate n true
+      else replicate n true with [1:n] = map2 (!=) (tail is) (init is)
+
+    def coarse_rasterize [n]
+                         {h = h: i64, w = w: i64}
+                         (tris: []triangle)
+                         ((bin_flags, bin_indices, tri_indices): ([n]bool, [n]u8, [n]i64)) =
       let fb_bbox = {xmin = 0, ymin = 0, xmax = w, ymax = h}
-      let bins_w = assert (coarse_size * coarse_size == coarse_mask.num_bits) (w `div_ceil` bin_size)
-      in zip bin_indices tri_indices
-         |> map (\(bin_index, tri_index) ->
-                   let (f0, f1, f2) = tris[tri_index]
-                   let tri_bbox = calc_tri_bbox (f0, f1, f2)
-                   let bin_xmin = (i64.u8 bin_index %% bins_w) * bin_size
-                   let bin_ymin = (i64.u8 bin_index / bins_w) * bin_size
-                   let verts = (f0.pos, f1.pos, f2.pos)
-                   let wzero = calc_wcoeffs verts {x = 0, y = 0}
-                   let wdelta = calc_wdelta verts
-                   let f (tile_index: i64) =
-                     let tile_bbox =
-                       let xmin = (tile_index %% coarse_size) * fine_size + bin_xmin
-                       let ymin = (tile_index / coarse_size) * fine_size + bin_ymin
-                       let xmax = xmin + fine_size
-                       let ymax = ymin + fine_size
-                       in {xmin, ymin, xmax, ymax}
-                     in if !bbox_overlaps tile_bbox fb_bbox || !bbox_overlaps tile_bbox tri_bbox
-                        then false
-                        else tri_overlaps_bbox tile_bbox wzero wdelta
-                   let mask = coarse_mask.from_pred_seq f
-                   in (bin_index, mask))
-         |> zip (iota n)
-         |> expand (\(_, (_, mask)) -> coarse_mask.size mask)
-                   (\(tri_index, (bin_index, mask)) set_tile_index ->
-                      let tile_index = coarse_mask.find_ith_set_bit mask set_tile_index
-                      in (bin_index, u8.i64 tile_index, tri_indices[tri_index]))
+      let bins_w = w `div_ceil` bin_size
+      let num_bits =
+        assert (coarse_size * coarse_size == coarse_mask.num_bits
+                && ilog2 (coarse_size * coarse_size) <= i64.i32 u8.num_bits)
+        ilog2 (coarse_size * coarse_size)
+      let f (bin_index, tri_index) =
+        let (f0, f1, f2) = tris[tri_index]
+        let tri_bbox = calc_tri_bbox (f0, f1, f2)
+        let bin_xmin = (i64.u8 bin_index %% bins_w) * bin_size
+        let bin_ymin = (i64.u8 bin_index / bins_w) * bin_size
+        let verts = (f0.pos, f1.pos, f2.pos)
+        let wzero = calc_wcoeffs verts {x = 0, y = 0}
+        let wdelta = calc_wdelta verts
+        let f (tile_index: i64) =
+          let tile_bbox =
+            let xmin = (tile_index %% coarse_size) * fine_size + bin_xmin
+            let ymin = (tile_index / coarse_size) * fine_size + bin_ymin
+            let xmax = xmin + fine_size
+            let ymax = ymin + fine_size
+            in {xmin, ymin, xmax, ymax}
+          in if !bbox_overlaps tile_bbox fb_bbox || !bbox_overlaps tile_bbox tri_bbox
+             then false
+             else tri_overlaps_bbox tile_bbox wzero wdelta
+        let mask = coarse_mask.from_pred_seq f
+        in (bin_index, mask)
+      let sz (_, (_, mask)) = coarse_mask.size mask
+      let get (tri_index, (bin_index, mask)) set_tile_index =
+        let tile_index = coarse_mask.find_ith_set_bit mask set_tile_index
+        in (bin_index, u8.i64 tile_index, tri_indices[tri_index])
+      let arr =
+        zip bin_indices tri_indices
+        |> map f
+        |> zip (iota n)
+      let szs = map sz arr
+      let bin_segment_counts = segmented_reduce (+) 0 bin_flags szs
+      in repl_segm_iota szs
+         |> uncurry (map2 (\i j -> get arr[i] j))
+         |> segmented_radix_sort_by_key (.1) (i32.i64 num_bits) u8.get_bit bin_segment_counts
          |> unzip3
 
     def bin_rasterize {h = h: i64, w = w: i64} (tris: []triangle) =
       let bins_h = h `div_ceil` bin_size
       let bins_w = w `div_ceil` bin_size
-      let num_bits = assert (ilog2 (bins_h * bins_w) <= i64.i32 u8.num_bits) ilog2 (bins_h * bins_w)
-      in indices tris
-         |> map (\tri_index ->
-                   let tri_bbox = calc_tri_bbox tris[tri_index]
-                   let bin_bbox =
-                     let xmin = (tri_bbox.xmin / bin_size) `i64.max` 0
-                     let ymin = (tri_bbox.ymin / bin_size) `i64.max` 0
-                     let xmax = (tri_bbox.xmax `div_ceil` bin_size) `i64.min` bins_w
-                     let ymax = (tri_bbox.ymax `div_ceil` bin_size) `i64.min` bins_h
-                     in {xmin, ymin, xmax, ymax}
-                   in (tri_index, bin_bbox))
-         |> expand (\(_, bbox) ->
-                      let bbox_h = bbox.ymax - bbox.ymin
-                      let bbox_w = bbox.xmax - bbox.xmin
-                      in (bbox_h `i64.max` 0) * (bbox_w `i64.max` 0))
-                   (\(tri_index, bbox) bbox_index ->
-                      let bbox_w = bbox.xmax - bbox.xmin
-                      let dy = bbox_index / bbox_w
-                      let dx = bbox_index %% bbox_w
-                      let x = bbox.xmin + dx
-                      let y = bbox.ymin + dy
-                      let bin_index = y * bins_w + x
-                      in (u8.i64 bin_index, tri_index))
-         |> radix_sort_by_key (.0) (i32.i64 num_bits) u8.get_bit
-         |> unzip
+      let num_bits =
+        assert (ilog2 (bins_h * bins_w) <= i64.i32 u8.num_bits)
+        ilog2 (bins_h * bins_w)
+      let f tri_index =
+        let tri_bbox = calc_tri_bbox tris[tri_index]
+        let bin_bbox =
+          let xmin = (tri_bbox.xmin / bin_size) `i64.max` 0
+          let ymin = (tri_bbox.ymin / bin_size) `i64.max` 0
+          let xmax = (tri_bbox.xmax `div_ceil` bin_size) `i64.min` bins_w
+          let ymax = (tri_bbox.ymax `div_ceil` bin_size) `i64.min` bins_h
+          in {xmin, ymin, xmax, ymax}
+        in (tri_index, bin_bbox)
+      let sz (_, bbox) =
+        let bbox_h = bbox.ymax - bbox.ymin
+        let bbox_w = bbox.xmax - bbox.xmin
+        in (bbox_h `i64.max` 0) * (bbox_w `i64.max` 0)
+      let get (tri_index, bbox) bbox_index =
+        let bbox_w = bbox.xmax - bbox.xmin
+        let dy = bbox_index / bbox_w
+        let dx = bbox_index %% bbox_w
+        let x = bbox.xmin + dx
+        let y = bbox.ymin + dy
+        let bin_index = y * bins_w + x
+        in (u8.i64 bin_index, tri_index)
+      let (bin_indices, tri_indices) =
+        indices tris
+        |> map f
+        |> expand sz get
+        |> radix_sort_by_key (.0) (i32.i64 num_bits) u8.get_bit
+        |> unzip
+      let bin_flags = calc_segment_flags bin_indices
+      in (bin_flags, bin_indices, tri_indices)
 
     def rasterize 'target [h] [w]
                   (plot: (fragment V.t -> target))

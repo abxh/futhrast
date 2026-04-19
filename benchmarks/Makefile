@@ -25,7 +25,7 @@ run_$(1):
 	rm -f $(1).c $(1) $(1).fut.tuning
 endef
 
-run: run_point run_line run_triangle_imm run_triangle_tiled run_triangle_tiled_segmented
+run: run_point run_line run_triangle_imm run_triangle_tiled
 
 run_point: $(eval $(call RUN_TEMPLATE,point))
 
@@ -35,11 +35,9 @@ run_triangle_imm: $(eval $(call RUN_TEMPLATE,triangle_imm))
 
 run_triangle_tiled: $(eval $(call RUN_TEMPLATE,triangle_tiled))
 
-run_triangle_tiled_segmented: $(eval $(call RUN_TEMPLATE,triangle_tiled_segmented))
-
 clean:
 	rm -f extract_obj_data *.in
-	rm -f *.c point line triangle_imm triangle_tiled triangle_tiled_segmented
+	rm -f *.c point line triangle_imm triangle_tiled
 	rm -f *.fut.tuning
 	rm -f *.json
 	rm -rf *.prof

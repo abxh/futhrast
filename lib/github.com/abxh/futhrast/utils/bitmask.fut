@@ -5,6 +5,9 @@
 -- github.com/diku-dk/containers
 --
 -- exposed modules:
+-- module bitmask_8 = bitmask_1 u8 {def find_ith_set_bit = find_ith_set_bit_u8}
+-- module bitmask_16 = bitmask_1 u16 {def find_ith_set_bit = find_ith_set_bit_u16}
+-- module bitmask_32 = bitmask_1 u32 {def find_ith_set_bit = find_ith_set_bit_u32}
 -- module bitmask_64 = bitmask_1 u64 {def find_ith_set_bit = find_ith_set_bit_u64}
 -- module bitmask_128 = cat_bitmask bitmask_64 bitmask_64
 -- module bitmask_256 = cat_bitmask bitmask_128 bitmask_128
@@ -174,6 +177,9 @@ module cat_bitmask (L: bitmask) (R: bitmask) : bitmask = {
     tabulate num_bits (member b)
 }
 
+module bitmask_8 = bitmask_1 u8 {def find_ith_set_bit = find_ith_set_bit_u8}
+module bitmask_16 = bitmask_1 u16 {def find_ith_set_bit = find_ith_set_bit_u16}
+module bitmask_32 = bitmask_1 u32 {def find_ith_set_bit = find_ith_set_bit_u32}
 module bitmask_64 = bitmask_1 u64 {def find_ith_set_bit = find_ith_set_bit_u64}
 module bitmask_128 = cat_bitmask bitmask_64 bitmask_64
 module bitmask_256 = cat_bitmask bitmask_128 bitmask_128
