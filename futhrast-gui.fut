@@ -21,7 +21,7 @@ type~ lys_state =
   , inds_penger: []i64
   , render_model: #bunny | #monkey | #head | #penger
   , render_kind: #points | #lines | #triangles
-  , triangle_rasterizer_mode: #immediate_scanline | #immediate_barycentric
+  , triangle_rasterizer_mode: #immediate_scanline | #immediate_barycentric | #tiled_barycentric
   }
 
 module lys_text_content = {
@@ -29,7 +29,7 @@ module lys_text_content = {
 
   def text_format () =
     "FPS: %ld\n"
-    ++ "triangle rasterizer mode: %[immediate (scanline)|immediate (barycentric)]\n"
+    ++ "triangle rasterizer mode: %[immediate (scanline)|immediate (barycentric)|tiled (barycentric)]\n"
     ++ "t: switch rasterizer mode\n"
     ++ "\n"
     ++ "b: bunny\n"
@@ -48,6 +48,7 @@ module lys_text_content = {
       match s.triangle_rasterizer_mode
       case #immediate_scanline -> 0
       case #immediate_barycentric -> 1
+      case #tiled_barycentric -> 2
     in (i64.f32 render_duration, tr_mode)
 
   def text_colour = const argb.white
@@ -143,7 +144,8 @@ module lys : lys with text_content = lys_text_content.text_content = {
     else if key == SDLK_t
     then s with triangle_rasterizer_mode = match s.triangle_rasterizer_mode
            case #immediate_scanline -> #immediate_barycentric
-           case #immediate_barycentric -> #immediate_scanline
+           case #immediate_barycentric -> #tiled_barycentric
+           case #tiled_barycentric -> #immediate_scanline
     else if key == SDLK_a
     then s with pos_delta.0 = -1
     else if key == SDLK_d
@@ -207,6 +209,7 @@ module lys : lys with text_content = lys_text_content.text_content = {
 
   local module R = RenderSetup Config Varying
   local module RB = CustomRenderSetup ImmBarycentricTriangleRasterizer Config Varying
+  local module RT = CustomRenderSetup TiledTriangleRasterizer Config Varying
 
   local
   def on_vertex (s: state) (v: (f32, f32, f32)) : vertex_out Varying.t =
@@ -259,6 +262,16 @@ module lys : lys with text_content = lys_text_content.text_content = {
          case #immediate_scanline ->
            R.init {w = s.w, h = s.h} (argb.gray 0.4) |> R.unpack
            |> R.render s
+                       { primitive_type = #triangles
+                       , vertices = verts
+                       , indices = inds
+                       }
+                       on_vertex
+                       on_fragment
+           |> (.0)
+         case #immediate_barycentric ->
+           RB.init {w = s.w, h = s.h} (argb.gray 0.3) |> R.unpack
+           |> RB.render s
                         { primitive_type = #triangles
                         , vertices = verts
                         , indices = inds
@@ -266,9 +279,9 @@ module lys : lys with text_content = lys_text_content.text_content = {
                         on_vertex
                         on_fragment
            |> (.0)
-         case #immediate_barycentric ->
-           RB.init {w = s.w, h = s.h} (argb.gray 0.3) |> R.unpack
-           |> RB.render s
+         case #tiled_barycentric ->
+           RT.init {w = s.w, h = s.h} (argb.gray 0.2) |> R.unpack
+           |> RT.render s
                         { primitive_type = #triangles
                         , vertices = verts
                         , indices = inds

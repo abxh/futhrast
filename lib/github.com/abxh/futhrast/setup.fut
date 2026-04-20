@@ -9,6 +9,7 @@ open import "rasterize/point"
 open import "rasterize/line"
 open import "rasterize/triangle_imm"
 open import "rasterize/triangle_imm_barycentric"
+open import "rasterize/triangle_tiled"
 
 -- | configuration options
 module type ConfigSpec = {
