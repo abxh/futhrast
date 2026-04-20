@@ -186,10 +186,8 @@ module TiledTriangleRasterizer : TriangleRasterizerSpec = \(V: VaryingSpec) ->
                          ((bin_flags, bin_indices, tri_indices): ([n]bool, [n]u8, [n]i64)) =
       let fb_bbox = {xmin = 0, ymin = 0, xmax = w, ymax = h}
       let bins_w = w `div_ceil` bin_size
-      let tiles_per_bin = coarse_size * coarse_size
-      let num_bits =
-        assert (tiles_per_bin == coarse_mask.num_bits && tiles_per_bin <= i64.u8 u8.highest)
-        ilog2 tiles_per_bin
+      let tiles_per_bin = assert (coarse_size * coarse_size == coarse_mask.num_bits) (coarse_size * coarse_size)
+      let num_bits = assert (coarse_size * coarse_size - 1 <= i64.u8 u8.highest) (ilog2 tiles_per_bin)
       let f (bin_index, tri_index) =
         let (f0, f1, f2) = tris[tri_index]
         let tri_bbox = calc_tri_bbox (f0, f1, f2)
@@ -307,7 +305,7 @@ module TiledTriangleRasterizer : TriangleRasterizerSpec = \(V: VaryingSpec) ->
               let tri_index = chunk_index * tile_size + j
               in if tri_index < tri_count
                  then (is[tri_offset + tri_index], depth_values[tri_offset + tri_index])
-                 else ((-1, -1), depth_values[tri_offset + tri_index])
+                 else ((-1, -1), ne_depth)
             let (is, depth_values) =
               tabulate tile_size g
               |> unzip
@@ -319,7 +317,7 @@ module TiledTriangleRasterizer : TriangleRasterizerSpec = \(V: VaryingSpec) ->
               let tri_index = chunk_index * tile_size + j
               in if tri_index < tri_count
                  then (is[tri_offset + tri_index], frag_values[tri_offset + tri_index])
-                 else ((-1, -1), frag_values[tri_offset + tri_index])
+                 else ((-1, -1), frag_values[tri_offset])
             let (is, target_values) =
               tabulate tile_size g
               |> map (\((y, x), f) ->
@@ -342,8 +340,7 @@ module TiledTriangleRasterizer : TriangleRasterizerSpec = \(V: VaryingSpec) ->
           in (y, x)
         in tabulate_2d fine_size fine_size f |> flatten
       let active_tiles = #[incremental_flattening(only_intra)] tabulate (length active_tile_ids) f
-      let dest =
-        zip (flatten target_buffer) (flatten depth_buffer) |> unflatten
+      let dest = zip (flatten target_buffer) (flatten depth_buffer) |> unflatten
       let is = (map (\i -> tabulate_tile_indices active_tile_ids[i]) (iota (length active_tile_ids))) |> flatten
       let (tbuf, dbuf) =
         active_tiles

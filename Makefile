@@ -13,9 +13,9 @@ NOWARN_CFLAGS ?= -O
 CFLAGS += -O
 CXXFLAGS += -O 
 
-NOWARN_CFLAGS += -I/opt/rocm/include -L/opt/rocm/lib
-CFLAGS += -I/opt/rocm/include -L/opt/rocm/lib
-CXXFLAGS += -I/opt/rocm/include -L/opt/rocm/lib
+# NOWARN_CFLAGS += -I/opt/rocm/include -L/opt/rocm/lib
+# CFLAGS += -I/opt/rocm/include -L/opt/rocm/lib
+# CXXFLAGS += -I/opt/rocm/include -L/opt/rocm/lib
 
 # NOWARN_CFLAGS ?= -O3 -march=native -flto=auto -ffast-math
 # CFLAGS += -O3 -march=native -flto=auto -ffast-math
@@ -26,7 +26,7 @@ CXXFLAGS += -I/opt/rocm/include -L/opt/rocm/lib
 # CXXFLAGS += -fsanitize=undefined
 # LDFLAGS += -fsanitize=undefined
 
-LYS_BACKEND := hip
+LYS_BACKEND := opencl
 LYS_FRONTEND := sdl
 
 export NOWARN_CFLAGS CFLAGS CXXFLAGS LDFLAGS LYS_BACKEND LYS_FRONTEND
