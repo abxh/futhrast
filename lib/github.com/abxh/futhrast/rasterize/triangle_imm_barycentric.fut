@@ -79,8 +79,6 @@ module ImmBarycentricTriangleRasterizer : TriangleRasterizerSpec = \(V: VaryingS
 
     def div_ceil (n: i64) (m: i64) = (n + (m - 1)) / m
 
-    def ilog2 (n: i64) : i64 = i64.i32 (63 - i64.clz n)
-
     def calc_signed_tri_area_2 ((v0, v1, v2): (vec2f.t, vec2f.t, vec2f.t)) : f32 =
       let v0v1 = v1 vec2f.- v0
       let v0v2 = v2 vec2f.- v0
@@ -163,16 +161,6 @@ module ImmBarycentricTriangleRasterizer : TriangleRasterizerSpec = \(V: VaryingS
       let w3 = w2 vec3f.+ (f32.i64 bin_size vec3f.* wdelta.y)
       let is_outside proj = proj w0 < 0 && proj w1 < 0 && proj w2 < 0 && proj w3 < 0
       in !(is_outside (.x) || is_outside (.y) || is_outside (.z))
-
-    def calc_segment_flags_u8 [n] (is: [n]u8) : [n]bool =
-      if n == 0
-      then replicate n true
-      else replicate n true with [1:n] = map2 (!=) (tail is) (init is)
-
-    def calc_segment_flags_u16 [n] (is: [n]u16) : [n]bool =
-      if n == 0
-      then replicate n true
-      else replicate n true with [1:n] = map2 (!=) (tail is) (init is)
 
     def coarse_rasterize [n]
                          {h = h: i64, w = w: i64}

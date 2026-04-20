@@ -1,9 +1,6 @@
 -- tiled triangle rasterizer
 -- assumes non-zero triangle area
 
--- todo: fix plot being possibly parrelel... maybe compute target, and use max Z for depth culling
--- maybe just ensure all math operations do not use soacs?
-
 import "../../../diku-dk/segmented/segmented"
 import "../../../diku-dk/sorts/radix_sort"
 
