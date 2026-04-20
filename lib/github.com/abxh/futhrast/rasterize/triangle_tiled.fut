@@ -322,7 +322,10 @@ module TiledTriangleRasterizer : TriangleRasterizerSpec = \(V: VaryingSpec) ->
               tabulate tile_size g
               |> map (\((y, x), f) ->
                         if (0 <= x && x < fine_size) && (0 <= y && y < fine_size) && depth_tile[y, x] == f.depth
-                        then ((y, x), plot f)
+                        then -- todo: fix plot being possibly parrelel... maybe compute target, and use max Z for depth culling
+                             --
+                             -- note: the plot function below may be the cause of the internal compilation error
+                             ((y, x), plot f)
                         else ((-1, -1), ne_target))
               |> unzip
             in scatter_2d target_tile is target_values
