@@ -64,6 +64,7 @@ def segmented_radix_sort [n] [m] 't
                          (get_bit: i32 -> t -> i32)
                          (seg_counts: [m]i64)
                          (xs: [n]t) : [n]t =
+  -- note: filter prepass as workaround for zero counts which lead to subtle bugs
   let seg_counts = filter (> 0) seg_counts
   let seg_offsets = exscan (+) 0 seg_counts
   let segment_flags = spread n false seg_offsets (map (const true) seg_counts)

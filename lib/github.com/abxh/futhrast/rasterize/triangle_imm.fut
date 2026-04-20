@@ -75,7 +75,7 @@ module ImmTriangleRasterizer : TriangleRasterizerSpec = \(V: VaryingSpec) ->
       let w1 = f32.max 0 (f32.min 1 w1)
       let w2 = f32.max 0 (f32.min 1 w2)
       let w = (w0, w1, w2)
-      let pos = {x = f32.i32 pos.x, y = f32.i32 pos.y}
+      let pos = {x = 0.5 + f32.i32 pos.x, y = 0.5 + f32.i32 pos.y}
       let Z_inv = barycentric f0.Z_inv f1.Z_inv f2.Z_inv w
       let depth = barycentric_affine Z_inv (f0.depth, f0.Z_inv) (f1.depth, f1.Z_inv) (f2.depth, f2.Z_inv) w
       let attr = barycentric_affine_attr Z_inv (f0.attr, f0.Z_inv) (f1.attr, f1.Z_inv) (f2.attr, f2.Z_inv) w

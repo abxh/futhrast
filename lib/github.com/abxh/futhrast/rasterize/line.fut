@@ -88,7 +88,7 @@ module LineRasterizer : LineRasterizerSpec = \(V: VaryingSpec) ->
       let y = i64.i32 f.pos.y
       let x = i64.i32 f.pos.x
       let f' =
-        { pos = {x = f32.i32 f.pos.x, y = f32.i32 f.pos.y}
+        { pos = {x = 0.5 + f32.i32 f.pos.x, y = 0.5 + f32.i32 f.pos.y}
         , depth = f.depth
         , Z_inv = f.Z_inv
         , attr = f.attr
