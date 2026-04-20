@@ -339,7 +339,7 @@ module TiledTriangleRasterizer : TriangleRasterizerSpec = \(V: VaryingSpec) ->
         let f pixel_y pixel_x =
           let x = pixel_x + tile_xmin
           let y = pixel_y + tile_ymin
-          in (x, y)
+          in (y, x)
         in tabulate_2d fine_size fine_size f |> flatten
       let active_tiles = #[incremental_flattening(only_intra)] tabulate (length active_tile_ids) f
       let dest =
