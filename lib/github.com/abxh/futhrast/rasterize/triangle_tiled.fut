@@ -307,7 +307,7 @@ module TiledTriangleRasterizer : TriangleRasterizerSpec = \(V: VaryingSpec) ->
               let tri_index = chunk_index * tile_size + j
               in if tri_index < tri_count
                  then (is[tri_offset + tri_index], depth_values[tri_offset + tri_index])
-                 else ((-1, -1), ne_depth)
+                 else ((-1, -1), depth_values[tri_offset + tri_index])
             let (is, depth_values) =
               tabulate tile_size g
               |> unzip
@@ -319,7 +319,7 @@ module TiledTriangleRasterizer : TriangleRasterizerSpec = \(V: VaryingSpec) ->
               let tri_index = chunk_index * tile_size + j
               in if tri_index < tri_count
                  then (is[tri_offset + tri_index], frag_values[tri_offset + tri_index])
-                 else ((-1, -1), frag_values[tri_offset])
+                 else ((-1, -1), frag_values[tri_offset + tri_index])
             let (is, target_values) =
               tabulate tile_size g
               |> map (\((y, x), f) ->
