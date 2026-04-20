@@ -1,5 +1,5 @@
 -- tiled triangle rasterizer
--- assumes non-zero triangle area and counterclockwise winding order
+-- assumes non-zero triangle area
 
 import "../../../diku-dk/segmented/segmented"
 import "../../../diku-dk/sorts/radix_sort"

@@ -1,5 +1,5 @@
 -- immediate-mode barycentric triangle rasterizer
--- assumes non-zero triangle area and counterclockwise winding order
+-- assumes non-zero triangle area
 
 import "../../../diku-dk/segmented/segmented"
 
