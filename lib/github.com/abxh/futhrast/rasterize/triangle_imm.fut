@@ -1,4 +1,4 @@
--- immediate-mode triangle rasterizer
+-- immediate-mode scanline triangle rasterizer
 
 import "../../../diku-dk/segmented/segmented"
 
@@ -21,7 +21,7 @@ module type TriangleRasterizerSpec =
       -> ([h][w]target, [h][w]f32)
   }
 
--- | immediate triangle rasterizer
+-- | immediate-mode scanline triangle rasterizer
 module ImmTriangleRasterizer : TriangleRasterizerSpec = \(V: VaryingSpec) ->
   {
     -- based on:
@@ -177,7 +177,7 @@ module ImmTriangleRasterizer : TriangleRasterizerSpec = \(V: VaryingSpec) ->
       in (target_buffer, depth_buffer)
   }
 
--- | immediate triangle rasterizer for testing purposes. can use the REPL for this
+-- | immediate-mode scanline triangle rasterizer for testing purposes. can use the REPL for this
 module ImmTriangleRasterizerTest = {
   local
   module V : VaryingSpec with t = bool = {
