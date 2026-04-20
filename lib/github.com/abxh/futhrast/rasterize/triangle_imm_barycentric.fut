@@ -204,14 +204,12 @@ module ImmBarycentricTriangleRasterizer : TriangleRasterizerSpec = \(V: VaryingS
       let sz (_, (_, mask)) = coarse_mask.size mask
       let get (tri_index, (bin_index, mask)) set_tile_index =
         let tile_index = coarse_mask.find_ith_set_bit mask set_tile_index
-        in (bin_index, tile_index, tri_indices[tri_index])
+        let tile_id = bin_index * tiles_per_bin + tile_index
+        in (tile_id, tri_indices[tri_index])
       in zip bin_indices tri_indices
          |> map f
          |> zip (iota n)
          |> expand sz get
-         |> map (\(bin_index, tile_index, tri_index) ->
-                   let tile_id = bin_index * tiles_per_bin + tile_index
-                   in (tile_id, tri_index))
          |> unzip
 
     def bin_rasterize {h = h: i64, w = w: i64} (tris: []triangle) =
