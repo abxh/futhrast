@@ -27,6 +27,9 @@ module type VaryingSpec = {
   -- | user-defined varying type
   type t
 
+  -- | idenity element
+  val one : t
+
   -- | user-defined addition implementation
   val (+) : t -> t -> t
 
@@ -39,6 +42,9 @@ module type VaryingExtensionsSpec =
   (V: VaryingSpec)
   -> {
        type t
+
+       val one : t
+       val zero : t
 
        val (+) : t -> t -> t
        val (-) : t -> t -> t
@@ -59,6 +65,8 @@ module type VaryingExtensionsSpec =
 module VaryingExtensions : VaryingExtensionsSpec = \(V: VaryingSpec) ->
   {
     open V
+
+    def zero = 0 * one
 
     def (-) x y = x + (-1 * y)
     def (/) x s = (1 / s) * x

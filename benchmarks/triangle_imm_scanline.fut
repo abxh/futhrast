@@ -13,6 +13,7 @@ import "../lib/github.com/athas/matte/colour"
 local
 module Varying : VaryingSpec with t = argb.colour = {
   type t = argb.colour
+  def one = argb.white
   def (+) = argb.add_linear
   def (*) = flip argb.scale
 }

@@ -55,6 +55,7 @@ module PointRasterizerTest = {
   local
   module V : VaryingSpec with t = bool = {
     type t = bool
+    def one = true
     def (+) = (||)
     def (*) s x = if bool.f32 s then x else false
   }

@@ -35,7 +35,12 @@ module TiledTriangleRasterizer : TriangleRasterizerSpec = \(V: VaryingSpec) ->
   {
     local module V = VaryingExtensions (V)
 
-    local module F32 = VaryingExtensions (f32)
+    local
+    module F32 = VaryingExtensions (
+      {
+        open f32
+        def one = 1f32
+      })
 
     local
     type triangle = (fragment V.t, fragment V.t, fragment V.t)
@@ -118,7 +123,7 @@ module TiledTriangleRasterizer : TriangleRasterizerSpec = \(V: VaryingSpec) ->
           let x = 0.5 + f32.i64 (pixel_index %% fine_size)
           let w = wzero vec3f.+ (x vec3f.* wdelta.x) vec3f.+ (y vec3f.* wdelta.y)
           in w.x >= 0 && w.y >= 0 && w.z >= 0
-        let mask = fine_mask.from_pred_seq g
+        let mask = fine_mask.from_pred_seq g (fine_size * fine_size)
         in (bin_index, tile_index, tri_index, mask)
       let sz ((_, _, _, mask)) = fine_mask.size mask
       let get ((bin_index, tile_index, tri_index, mask)) set_pixel_index =
@@ -210,7 +215,7 @@ module TiledTriangleRasterizer : TriangleRasterizerSpec = \(V: VaryingSpec) ->
           in if !bbox_overlaps tile_bbox fb_bbox || !bbox_overlaps tile_bbox tri_bbox
              then false
              else tri_overlaps_bbox tile_bbox wzero wdelta
-        let mask = coarse_mask.from_pred_seq f
+        let mask = coarse_mask.from_pred_seq f (coarse_size * coarse_size)
         in (bin_index, mask)
       let sz (_, (_, mask)) = coarse_mask.size mask
       let get (tri_index, (bin_index, mask)) set_tile_index =
@@ -321,7 +326,7 @@ module TiledTriangleRasterizer : TriangleRasterizerSpec = \(V: VaryingSpec) ->
                          , depth
                          )
                  else ( (-1, -1)
-                      , {pos = {x = 0, y = 0}, Z_inv = 1, depth = 0, attr = ifrags[tri_offset].3}
+                      , {pos = {x = 0, y = 0}, Z_inv = 1, depth = 0, attr = V.zero}
                       , ne_depth
                       )
             let (is, frag_values, depth_values) =
@@ -354,6 +359,7 @@ module TiledTriangleRasterizerTest = {
   local
   module V : VaryingSpec with t = bool = {
     type t = bool
+    def one = true
     def (+) = (||)
     def (*) s x = if bool.f32 s then x else false
   }

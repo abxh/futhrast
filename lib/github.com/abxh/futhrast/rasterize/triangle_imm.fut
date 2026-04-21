@@ -31,7 +31,12 @@ module ImmTriangleRasterizer : TriangleRasterizerSpec = \(V: VaryingSpec) ->
 
     local module V = VaryingExtensions (V)
 
-    local module F32 = VaryingExtensions (f32)
+    local
+    module F32 = VaryingExtensions (
+      {
+        open f32
+        def one = 1f32
+      })
 
     local
     type triangle = (fragment V.t, fragment V.t, fragment V.t)
@@ -182,6 +187,7 @@ module ImmTriangleRasterizerTest = {
   local
   module V : VaryingSpec with t = bool = {
     type t = bool
+    def one = true
     def (+) = (||)
     def (*) s x = if bool.f32 s then x else false
   }
