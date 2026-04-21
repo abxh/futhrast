@@ -51,13 +51,13 @@ module TiledTriangleRasterizer : TriangleRasterizerSpec = \(V: VaryingSpec) ->
       , ymax: a
       }
 
-    module coarse_mask = bitmask_256
-    module fine_mask = bitmask_64
+    module coarse_mask = bitmask_64
+    module fine_mask = bitmask_256
 
     local def bin_size : i64 = 128i64
-    local def fine_size : i64 = 8i64
+    local def fine_size : i64 = 16i64
     local def coarse_size : i64 = bin_size / fine_size
-    local def tri_block_size : i64 = 512i64
+    local def tri_block_size : i64 = 256i64
 
     def barycentric = F32.barycentric
     def barycentric_affine = F32.barycentric_perspective_corrected_w_Z_inv_t
@@ -276,7 +276,8 @@ module TiledTriangleRasterizer : TriangleRasterizerSpec = \(V: VaryingSpec) ->
                   ((ne_target, ne_depth): (target, f32))
                   ((target_buffer, depth_buffer): ([h][w]target, [h][w]f32))
                   (tris: [](fragment V.t, fragment V.t, fragment V.t)) : ([h][w]target, [h][w]f32) =
-      let bins_w = w `div_ceil` bin_size
+      -- todo: below assumption can be broken, if a #[sequential] is added to tile reads?
+      let bins_w = assert (fine_size * fine_size == tri_block_size) (w `div_ceil` bin_size)
       let tabulate_tile {tile_xmin, tile_ymin} proj =
         let f pixel_y pixel_x =
           let x = pixel_x + tile_xmin
@@ -300,23 +301,25 @@ module TiledTriangleRasterizer : TriangleRasterizerSpec = \(V: VaryingSpec) ->
         |> fine_rasterize {h, w} tris
       let tile_offsets = exscan (+) 0 tile_counts
       let f i =
-        let (bin_index, tile_index) = active_tiles[i]
         let tri_count = tile_counts[i]
         let tri_offset = tile_offsets[i]
         let num_chunks = tri_count `div_ceil` tri_block_size
+        let (bin_index, tile_index) = active_tiles[i]
         let bin_xmin = (i64.u16 bin_index %% bins_w) * bin_size
         let bin_ymin = (i64.u16 bin_index / bins_w) * bin_size
         let tile_xmin = (i64.u8 tile_index %% coarse_size) * fine_size + bin_xmin
         let tile_ymin = (i64.u8 tile_index / coarse_size) * fine_size + bin_ymin
         let depth_tile =
-          -- todo: is #[sequential] tag even needed?
-          loop depth_tile = #[sequential] tabulate_tile {tile_xmin, tile_ymin} (\(y, x) -> depth_buffer[y, x])
+          loop depth_tile = tabulate_tile {tile_xmin, tile_ymin} (\(y, x) -> depth_buffer[y, x])
           for chunk_index < num_chunks do
             let g j =
               let tri_index = chunk_index * tri_block_size + j
               in if tri_index < tri_count
-                 then let (y, x) = is[tri_offset + tri_index]
-                      in ((y - tile_ymin, x - tile_xmin), depth_values[tri_offset + tri_index])
+                 then let global_tri_index = tri_offset + tri_index
+                      let (y, x) = is[global_tri_index]
+                      let depth = depth_values[global_tri_index]
+                      let (pixel_y, pixel_x) = (y - tile_ymin, x - tile_xmin)
+                      in ((pixel_y, pixel_x), depth)
                  else ((-1, -1), ne_depth)
             let (is, depth_values) =
               tabulate tri_block_size g
