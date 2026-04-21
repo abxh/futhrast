@@ -54,6 +54,7 @@ module TiledTriangleRasterizer : TriangleRasterizerSpec = \(V: VaryingSpec) ->
     local def bin_size : i64 = 128i64
     local def fine_size : i64 = 8i64
     local def coarse_size : i64 = bin_size / fine_size
+    local def tri_block_size : i64 = 256i64
 
     def barycentric = F32.barycentric
     def barycentric_affine = F32.barycentric_perspective_corrected_w_Z_inv_t
@@ -272,7 +273,6 @@ module TiledTriangleRasterizer : TriangleRasterizerSpec = \(V: VaryingSpec) ->
                   ((target_buffer, depth_buffer): ([h][w]target, [h][w]f32))
                   (tris: [](fragment V.t, fragment V.t, fragment V.t)) : ([h][w]target, [h][w]f32) =
       let bins_w = w `div_ceil` bin_size
-      let tile_size = fine_size * fine_size
       let tabulate_tile {tile_xmin, tile_ymin} proj =
         let f pixel_y pixel_x =
           let x = pixel_x + tile_xmin
@@ -299,19 +299,19 @@ module TiledTriangleRasterizer : TriangleRasterizerSpec = \(V: VaryingSpec) ->
         let (bin_index, tile_index) = active_tiles[i]
         let tri_count = tile_counts[i]
         let tri_offset = tile_offsets[i]
-        let num_chunks = tri_count `div_ceil` tile_size
+        let num_chunks = tri_count `div_ceil` tri_block_size
         let bin_xmin = (i64.u16 bin_index %% bins_w) * bin_size
         let bin_ymin = (i64.u16 bin_index / bins_w) * bin_size
         let tile_xmin = (i64.u8 tile_index %% coarse_size) * fine_size + bin_xmin
         let tile_ymin = (i64.u8 tile_index / coarse_size) * fine_size + bin_ymin
         let (depth_tile, target_tile) =
           loop (depth_tile, target_tile) =
-                 ( tabulate_tile {tile_xmin, tile_ymin} (\(y, x) -> depth_buffer[y, x])
-                 , tabulate_tile {tile_xmin, tile_ymin} (\(y, x) -> target_buffer[y, x])
+                 ( #[sequential] tabulate_tile {tile_xmin, tile_ymin} (\(y, x) -> depth_buffer[y, x])
+                 , #[sequential] tabulate_tile {tile_xmin, tile_ymin} (\(y, x) -> target_buffer[y, x])
                  )
           for chunk_index < num_chunks do
             let g j =
-              let tri_index = chunk_index * tile_size + j
+              let tri_index = chunk_index * tri_block_size + j
               in if tri_index < tri_count
                  then let (({pixel_x, pixel_y}, Z_inv, depth, attr)) = ifrags[tri_offset + tri_index]
                       let x = 0.5 + f32.i64 (tile_xmin + pixel_x)
@@ -321,22 +321,18 @@ module TiledTriangleRasterizer : TriangleRasterizerSpec = \(V: VaryingSpec) ->
                          , depth
                          )
                  else ( (-1, -1)
-                      , { pos = {x = 0, y = 0}
-                        , Z_inv = 1
-                        , depth = 0
-                        , attr = ifrags[tri_offset].3
-                        }
+                      , {pos = {x = 0, y = 0}, Z_inv = 1, depth = 0, attr = ifrags[tri_offset].3}
                       , ne_depth
                       )
             let (is, frag_values, depth_values) =
-              tabulate tile_size g
+              tabulate tri_block_size g
               |> unzip3
             let depth_tile = reduce_by_index_2d depth_tile depth_select ne_depth is depth_values
             let (is, target_values) =
               zip is frag_values
               |> map (\((y, x), f) ->
                         if (0 <= x && x < fine_size) && (0 <= y && y < fine_size) && depth_tile[y, x] == f.depth
-                        then ((y, x), plot f)
+                        then ((y, x), #[sequential] plot f)
                         else ((-1, -1), ne_target))
               |> unzip
             in (depth_tile, scatter_2d target_tile is target_values)
