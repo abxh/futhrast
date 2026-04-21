@@ -270,6 +270,25 @@ module TiledTriangleRasterizer : TriangleRasterizerSpec = \(V: VaryingSpec) ->
       let bin_flags = calc_segment_flags_u16 bin_indices
       in (bin_flags, bin_indices, tri_indices)
 
+    def tabulate_tile {tile_xmin, tile_ymin} proj =
+      let f pixel_y pixel_x =
+        let x = pixel_x + tile_xmin
+        let y = pixel_y + tile_ymin
+        in proj (y, x)
+      in tabulate_2d fine_size fine_size f
+
+    def tabulate_tile_indices {h = _: i64, w = w: i64} (bin_index, tile_index) =
+      let bins_w = w `div_ceil` bin_size
+      let bin_xmin = (i64.u16 bin_index %% bins_w) * bin_size
+      let bin_ymin = (i64.u16 bin_index / bins_w) * bin_size
+      let tile_xmin = (i64.u8 tile_index %% coarse_size) * fine_size + bin_xmin
+      let tile_ymin = (i64.u8 tile_index / coarse_size) * fine_size + bin_ymin
+      let f pixel_y pixel_x =
+        let x = pixel_x + tile_xmin
+        let y = pixel_y + tile_ymin
+        in (y, x)
+      in tabulate_2d fine_size fine_size f |> flatten
+
     def rasterize 'target [h] [w]
                   (plot: (fragment V.t -> target))
                   (depth_select: f32 -> f32 -> f32)
@@ -278,22 +297,6 @@ module TiledTriangleRasterizer : TriangleRasterizerSpec = \(V: VaryingSpec) ->
                   (tris: [](fragment V.t, fragment V.t, fragment V.t)) : ([h][w]target, [h][w]f32) =
       -- todo: below assumption can be broken, if a #[sequential] is added to tile reads?
       let bins_w = assert (fine_size * fine_size == tri_block_size) (w `div_ceil` bin_size)
-      let tabulate_tile {tile_xmin, tile_ymin} proj =
-        let f pixel_y pixel_x =
-          let x = pixel_x + tile_xmin
-          let y = pixel_y + tile_ymin
-          in proj (y, x)
-        in tabulate_2d fine_size fine_size f
-      let tabulate_tile_indices (bin_index, tile_index) =
-        let bin_xmin = (i64.u16 bin_index %% bins_w) * bin_size
-        let bin_ymin = (i64.u16 bin_index / bins_w) * bin_size
-        let tile_xmin = (i64.u8 tile_index %% coarse_size) * fine_size + bin_xmin
-        let tile_ymin = (i64.u8 tile_index / coarse_size) * fine_size + bin_ymin
-        let f pixel_y pixel_x =
-          let x = pixel_x + tile_xmin
-          let y = pixel_y + tile_ymin
-          in (y, x)
-        in tabulate_2d fine_size fine_size f |> flatten
       let tris = tris |> map ensure_cclockwise_winding_order
       let (active_tiles, tile_counts, is, frag_values, depth_values) =
         bin_rasterize {h, w} tris
@@ -330,7 +333,8 @@ module TiledTriangleRasterizer : TriangleRasterizerSpec = \(V: VaryingSpec) ->
         (#[incremental_flattening(only_intra)] tabulate (length active_tiles) f)
         |> flatten
         |> scatter_2d (copy depth_buffer)
-                      ((map (\i -> tabulate_tile_indices active_tiles[i]) (iota (length active_tiles))) |> flatten)
+                      ((map (\i -> tabulate_tile_indices {h, w} active_tiles[i]) (iota (length active_tiles)))
+                       |> flatten)
       let (is, target_values) =
         zip is frag_values
         |> map (\((y, x), f) ->
