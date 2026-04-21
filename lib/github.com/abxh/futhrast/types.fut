@@ -22,18 +22,6 @@ def unproj 'varying ({pos = {x, y}, depth, Z_inv, attr}: fragment varying) : ver
   let z' = depth * w'
   in {pos = {x = x', y = y', z = z', w = w'}, attr}
 
--- | internal screen to external window function (following SDL conventions)
-def map_screen_to_window 'varying
-                         {w = w: i64, h = h: i64}
-                         ({pos = {x, y}, depth, Z_inv, attr}: fragment varying) : fragment varying =
-  -- Map screen [-1;1]x[-1;1] to [0;1]x[0;1]
-  let x' = (x + 1) / 2
-  let y' = (y + 1) / 2
-  -- Map [0;1]x[0;1] to window [0;w]x[-h;0]
-  let x'' = x' * f32.i64 w
-  let y'' = (-y') * f32.i64 h
-  in {pos = {x = x'', y = y''}, depth, Z_inv, attr}
-
 -- | varying specification
 module type VaryingSpec = {
   -- | user-defined varying type
