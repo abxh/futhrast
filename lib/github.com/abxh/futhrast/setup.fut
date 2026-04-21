@@ -153,10 +153,9 @@ module CustomRenderSetup (T: TriangleRasterizerSpec) : RenderSetupSpec = \(V: Va
 
     local
     def depth_select (c: render_config) lhs rhs : f32 =
-      if c.depth_type == #reversed_z && (lhs f32.> rhs)
-      || c.depth_type == #normal_z && (lhs f32.< rhs)
-      then lhs
-      else rhs
+      if c.depth_type == #reversed_z
+      then f32.max lhs rhs
+      else f32.min lhs rhs
 
     def render 'uniform 'vertex 'target [w] [h]
                (c: render_config)

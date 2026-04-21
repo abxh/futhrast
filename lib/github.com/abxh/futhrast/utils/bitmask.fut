@@ -13,6 +13,7 @@
 -- module bitmask_256 = cat_bitmask bitmask_128 bitmask_128
 
 local
+#[inline]
 def find_ith_set_bit_u8 (b: u8) (i: i64) : i64 =
   let f b = b & (b - 1)
   let s0 = b
@@ -37,6 +38,7 @@ def find_ith_set_bit_u8 (b: u8) (i: i64) : i64 =
   in u8.ctz w |> i64.i32
 
 local
+#[inline]
 def find_ith_set_bit_u16 (b: u16) (i: i64) : i64 =
   let lower = u8.u16 b
   let upper = b >> 8 |> u8.u16
@@ -46,6 +48,7 @@ def find_ith_set_bit_u16 (b: u16) (i: i64) : i64 =
      else find_ith_set_bit_u8 upper (i - low_count) + 8
 
 local
+#[inline]
 def find_ith_set_bit_u32 (b: u32) (i: i64) : i64 =
   let lower = u16.u32 b
   let upper = b >> 16 |> u16.u32
@@ -55,6 +58,7 @@ def find_ith_set_bit_u32 (b: u32) (i: i64) : i64 =
      else find_ith_set_bit_u16 upper (i - low_count) + 16
 
 local
+#[inline]
 def find_ith_set_bit_u64 (b: u64) (i: i64) : i64 =
   let lower = u32.u64 b
   let upper = b >> 32 |> u32.u64

@@ -111,33 +111,29 @@ module ImmBarycentricTriangleRasterizer : TriangleRasterizerSpec = \(V: VaryingS
         let verts = (f0.pos, f1.pos, f2.pos)
         let wzero = calc_wcoeffs verts {x = f32.i64 tile_xmin, y = f32.i64 tile_ymin}
         let wdelta = calc_wdelta verts
+        let inv_area_2 = 1 / calc_signed_tri_area_2 verts
         let g pixel_index =
           let y = 0.5 + f32.i64 (pixel_index / fine_size)
           let x = 0.5 + f32.i64 (pixel_index %% fine_size)
           let w = wzero vec3f.+ (x vec3f.* wdelta.x) vec3f.+ (y vec3f.* wdelta.y)
           in w.x >= 0 && w.y >= 0 && w.z >= 0
         let mask = fine_mask.from_pred_seq g (fine_size * fine_size)
-        in (tile_id, tri_index, mask)
+        in ({tile_xmin, tile_ymin}, {tri_index, wzero, wdelta, inv_area_2}, mask)
       let sz ((_, _, mask)) = fine_mask.size mask
-      let get ((tile_id, tri_index, mask)) set_pixel_index =
-        let bin_index = tile_id / tiles_per_bin
-        let tile_index = tile_id %% tiles_per_bin
-        let bin_xmin = (bin_index %% bins_w) * bin_size
-        let bin_ymin = (bin_index / bins_w) * bin_size
-        let tile_xmin = (tile_index %% coarse_size) * fine_size + bin_xmin
-        let tile_ymin = (tile_index / coarse_size) * fine_size + bin_ymin
+      let get (({tile_xmin, tile_ymin}, {tri_index, wzero, wdelta, inv_area_2}, mask)) set_pixel_index =
         let pixel_index = fine_mask.find_ith_set_bit mask set_pixel_index
         let pixel_x = pixel_index %% fine_size
         let pixel_y = pixel_index / fine_size
         let x = pixel_x + tile_xmin
         let y = pixel_y + tile_ymin
-        let (f0, f1, f2) = tris[tri_index]
-        let verts = (f0.pos, f1.pos, f2.pos)
-        let area_2 = calc_signed_tri_area_2 verts
         let pos = {x = 0.5 + f32.i64 x, y = 0.5 + f32.i64 y}
-        let (w0, w1, w2) = calc_wcoeffs verts pos |> vec3f.to_tuple
-        let (w0, w1, w2) = (w0 / area_2, w1 / area_2, w2 / area_2)
-        let w = (w0, w1, w2)
+        let w =
+          wzero
+          vec3f.+ ((0.5 + f32.i64 pixel_x) vec3f.* wdelta.x)
+          vec3f.+ ((0.5 + f32.i64 pixel_y) vec3f.* wdelta.y)
+          |> (inv_area_2 vec3f.*)
+          |> vec3f.to_tuple
+        let (f0, f1, f2) = tris[tri_index]
         let Z_inv = barycentric f0.Z_inv f1.Z_inv f2.Z_inv w
         let depth = barycentric_affine Z_inv (f0.depth, f0.Z_inv) (f1.depth, f1.Z_inv) (f2.depth, f2.Z_inv) w
         let attr = barycentric_affine_attr Z_inv (f0.attr, f0.Z_inv) (f1.attr, f1.Z_inv) (f2.attr, f2.Z_inv) w
