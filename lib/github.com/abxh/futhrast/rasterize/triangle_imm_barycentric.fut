@@ -33,7 +33,6 @@ module ImmBarycentricTriangleRasterizer : TriangleRasterizerSpec = \(V: VaryingS
     module F32 = VaryingExtensions (
       {
         open f32
-        def one = 1f32
       })
 
     local
