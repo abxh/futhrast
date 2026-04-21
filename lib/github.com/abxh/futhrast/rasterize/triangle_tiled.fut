@@ -2,7 +2,6 @@
 -- assumes non-zero triangle area
 
 -- todo:
--- optimise by only passing fragment in
 -- fix scatter race condition bug with large windows
 
 import "../../../diku-dk/segmented/segmented"
@@ -59,7 +58,7 @@ module TiledTriangleRasterizer : TriangleRasterizerSpec = \(V: VaryingSpec) ->
     local def bin_size : i64 = 128i64
     local def fine_size : i64 = 8i64
     local def coarse_size : i64 = bin_size / fine_size
-    local def tri_block_size : i64 = 256i64
+    local def tri_block_size : i64 = 512i64
 
     def barycentric = F32.barycentric
     def barycentric_affine = F32.barycentric_perspective_corrected_w_Z_inv_t
@@ -146,7 +145,7 @@ module TiledTriangleRasterizer : TriangleRasterizerSpec = \(V: VaryingSpec) ->
         let Z_inv = barycentric f0.Z_inv f1.Z_inv f2.Z_inv w
         let depth = barycentric_affine Z_inv (f0.depth, f0.Z_inv) (f1.depth, f1.Z_inv) (f2.depth, f2.Z_inv) w
         let attr = barycentric_affine_attr Z_inv (f0.attr, f0.Z_inv) (f1.attr, f1.Z_inv) (f2.attr, f2.Z_inv) w
-        in (({pixel_x, pixel_y}, Z_inv, depth, attr))
+        in ((y, x), {pos, Z_inv, depth, attr}, depth)
       let arr = zip3 bin_indices tile_indices tri_indices |> map f
       let szs = map sz arr
       let (active_tile_counts, active_tiles) =
@@ -155,10 +154,11 @@ module TiledTriangleRasterizer : TriangleRasterizerSpec = \(V: VaryingSpec) ->
                          tile_flags
                          (zip szs (zip bin_indices tile_indices))
         |> unzip
-      let ifrags =
+      let (is, frag_values, depth_values) =
         repl_segm_iota szs
         |> uncurry (map2 (\i j -> get arr[i] j))
-      in (active_tiles, active_tile_counts, ifrags)
+        |> unzip3
+      in (active_tiles, active_tile_counts, is, frag_values, depth_values)
 
     def calc_tri_bbox ((f0, f1, f2): triangle) : bbox i64 =
       let (p0, p1, p2) = (f0.pos, f1.pos, f2.pos)
@@ -295,7 +295,7 @@ module TiledTriangleRasterizer : TriangleRasterizerSpec = \(V: VaryingSpec) ->
           in (y, x)
         in tabulate_2d fine_size fine_size f |> flatten
       let tris = tris |> map ensure_cclockwise_winding_order
-      let (active_tiles, tile_counts, ifrags) =
+      let (active_tiles, tile_counts, is, frag_values, depth_values) =
         bin_rasterize {h, w} tris
         |> coarse_rasterize {h, w} tris
         |> fine_rasterize {h, w} tris
@@ -309,49 +309,35 @@ module TiledTriangleRasterizer : TriangleRasterizerSpec = \(V: VaryingSpec) ->
         let bin_ymin = (i64.u16 bin_index / bins_w) * bin_size
         let tile_xmin = (i64.u8 tile_index %% coarse_size) * fine_size + bin_xmin
         let tile_ymin = (i64.u8 tile_index / coarse_size) * fine_size + bin_ymin
-        let (depth_tile, target_tile) =
-          loop (depth_tile, target_tile) =
-                 ( #[sequential] tabulate_tile {tile_xmin, tile_ymin} (\(y, x) -> depth_buffer[y, x])
-                 , #[sequential] tabulate_tile {tile_xmin, tile_ymin} (\(y, x) -> target_buffer[y, x])
-                 )
+        let depth_tile =
+          -- todo: is #[sequential] tag even needed?
+          loop depth_tile = #[sequential] tabulate_tile {tile_xmin, tile_ymin} (\(y, x) -> depth_buffer[y, x])
           for chunk_index < num_chunks do
             let g j =
               let tri_index = chunk_index * tri_block_size + j
               in if tri_index < tri_count
-                 then let (({pixel_x, pixel_y}, Z_inv, depth, attr)) = ifrags[tri_offset + tri_index]
-                      let x = 0.5 + f32.i64 (tile_xmin + pixel_x)
-                      let y = 0.5 + f32.i64 (tile_ymin + pixel_y)
-                      in ( (pixel_y, pixel_x)
-                         , {pos = {x, y}, Z_inv, depth, attr}
-                         , depth
-                         )
-                 else ( (-1, -1)
-                      , {pos = {x = 0, y = 0}, Z_inv = 1, depth = 0, attr = V.zero}
-                      , ne_depth
-                      )
-            let (is, frag_values, depth_values) =
+                 then let (y, x) = is[tri_offset + tri_index]
+                      in ((y - tile_ymin, x - tile_xmin), depth_values[tri_offset + tri_index])
+                 else ((-1, -1), ne_depth)
+            let (is, depth_values) =
               tabulate tri_block_size g
-              |> unzip3
-            let depth_tile = reduce_by_index_2d depth_tile depth_select ne_depth is depth_values
-            let (is, target_values) =
-              zip is frag_values
-              |> map (\((y, x), f) ->
-                        if (0 <= x && x < fine_size) && (0 <= y && y < fine_size) && depth_tile[y, x] == f.depth
-                        then ((y, x), #[sequential] plot f)
-                        else ((-1, -1), ne_target))
-              |> unzip
-            in (depth_tile, scatter_2d target_tile is target_values)
-        in zip (flatten target_tile) (flatten depth_tile)
-      let subdest = #[incremental_flattening(only_intra)] tabulate (length active_tiles) f
-      let dest = zip (flatten target_buffer) (flatten depth_buffer) |> unflatten
-      let is = (map (\i -> tabulate_tile_indices active_tiles[i]) (iota (length active_tiles))) |> flatten
-      let (tbuf, dbuf) =
-        subdest
+              |> unzip2
+            in reduce_by_index_2d depth_tile depth_select ne_depth is depth_values
+        in flatten depth_tile
+      let depth_buffer =
+        (#[incremental_flattening(only_intra)] tabulate (length active_tiles) f)
         |> flatten
-        |> scatter_2d (copy dest) is
-        |> flatten
-        |> unzip
-      in (unflatten tbuf, unflatten dbuf)
+        |> scatter_2d (copy depth_buffer)
+                      ((map (\i -> tabulate_tile_indices active_tiles[i]) (iota (length active_tiles))) |> flatten)
+      let (is, target_values) =
+        zip is frag_values
+        |> map (\((y, x), f) ->
+                  if (0 <= x && x < w) && (0 <= y && y < h) && depth_buffer[y, x] == f.depth
+                  then ((y, x), plot f)
+                  else ((-1, -1), ne_target))
+        |> unzip2
+      let target_buffer = scatter_2d (copy target_buffer) is target_values
+      in (target_buffer, depth_buffer)
   }
 
 -- | triangle rasterizer for testing purposes. can use the REPL for this
