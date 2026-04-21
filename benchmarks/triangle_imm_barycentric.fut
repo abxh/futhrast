@@ -10,11 +10,6 @@ import "../lib/github.com/abxh/futhrast/math/vec"
 
 import "../lib/github.com/athas/matte/colour"
 
-module Config : ConfigSpec = {
-  def triangle_winding_order : #clockwise | #counterclockwise | #neither = #counterclockwise
-  def depth_type : #normal_z | #reversed_z = #reversed_z
-}
-
 local
 module Varying : VaryingSpec with t = argb.colour = {
   type t = argb.colour
@@ -22,7 +17,7 @@ module Varying : VaryingSpec with t = argb.colour = {
   def (*) = flip argb.scale
 }
 
-module R = CustomRenderSetup ImmBarycentricTriangleRasterizer Config Varying
+module R = RenderSetup Varying
 
 type state =
   { h: i64
@@ -44,6 +39,12 @@ def s : state =
   , angle_delta = 0
   }
 
+def render_config : render_config =
+  { triangle_winding_order = #counterclockwise
+  , depth_type = #reversed_z
+  , flip_y = true
+  }
+
 local
 def on_vertex (s: state) (v: (f32, f32, f32)) : vertex_out Varying.t =
   let v = v |> vec3f.from_tuple
@@ -63,12 +64,14 @@ def on_fragment (_: state) (f: fragment Varying.t) : argb.colour =
 
 def main [n] (vx: [n]f32, vy: [n]f32, vz: [n]f32, inds: []i64) =
   let verts = zip3 vx vy vz
-  in R.init {w = 1024, h = 1024} argb.black |> R.unpack
-     |> R.render s
+  let ne_depth = if render_config.depth_type == #reversed_z then -f32.inf else f32.inf
+  in init_framebuffer {w = 1024, h = 1024} (argb.black, ne_depth)
+     |> R.render render_config
+                 s
                  { primitive_type = #triangles
                  , vertices = verts
                  , indices = inds
                  }
                  on_vertex
                  on_fragment
-     |> (.0)
+     |> (.target_buffer)
