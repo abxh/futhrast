@@ -3,6 +3,8 @@
 -- based on the following with some tweaks and fixes:
 -- https://github.com/KristianMH/fun-with-futhark/blob/main/segmented/radix_sort/segmented_radix_sort.fut
 -- https://github.com/diku-dk/sorts/blob/master/lib/github.com/diku-dk/sorts/radix_sort.fut
+--
+-- note: zero counts *will* result in bugs. ensure to filter them before passing them on
 
 import "../../../diku-dk/segmented/segmented"
 
@@ -64,8 +66,6 @@ def segmented_radix_sort [n] [m] 't
                          (get_bit: i32 -> t -> i32)
                          (seg_counts: [m]i64)
                          (xs: [n]t) : [n]t =
-  -- note: filter prepass as workaround for zero counts which lead to subtle bugs
-  let seg_counts = filter (> 0) seg_counts
   let seg_offsets = exscan (+) 0 seg_counts
   let segment_flags = spread n false seg_offsets (map (const true) seg_counts)
   let segment_idxs = map i64.bool segment_flags |> scan (+) 0 |> map (\x -> x - 1)
