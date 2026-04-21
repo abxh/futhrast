@@ -140,7 +140,7 @@ module TiledTriangleRasterizer : TriangleRasterizerSpec = \(V: VaryingSpec) ->
         let Z_inv = barycentric f0.Z_inv f1.Z_inv f2.Z_inv w
         let depth = barycentric_affine Z_inv (f0.depth, f0.Z_inv) (f1.depth, f1.Z_inv) (f2.depth, f2.Z_inv) w
         let attr = barycentric_affine_attr Z_inv (f0.attr, f0.Z_inv) (f1.attr, f1.Z_inv) (f2.attr, f2.Z_inv) w
-        in ((pixel_y, pixel_x), {pos, Z_inv, depth, attr}, depth)
+        in (({pixel_x, pixel_y}, Z_inv, depth, attr))
       let arr = zip3 bin_indices tile_indices tri_indices |> map f
       let szs = map sz arr
       let (active_tile_counts, active_tiles) =
@@ -148,13 +148,11 @@ module TiledTriangleRasterizer : TriangleRasterizerSpec = \(V: VaryingSpec) ->
                          (0, (u16.lowest, u8.lowest))
                          tile_flags
                          (zip szs (zip bin_indices tile_indices))
-        |> filter (\(c, _) -> c != 0)
         |> unzip
-      let (is, frags, depths) =
+      let ifrags =
         repl_segm_iota szs
         |> uncurry (map2 (\i j -> get arr[i] j))
-        |> unzip3
-      in (active_tiles, active_tile_counts, is, frags, depths)
+      in (active_tiles, active_tile_counts, ifrags)
 
     def calc_tri_bbox ((f0, f1, f2): triangle) : bbox i64 =
       let (p0, p1, p2) = (f0.pos, f1.pos, f2.pos)
@@ -292,7 +290,7 @@ module TiledTriangleRasterizer : TriangleRasterizerSpec = \(V: VaryingSpec) ->
           in (y, x)
         in tabulate_2d fine_size fine_size f |> flatten
       let tris = tris |> map ensure_cclockwise_winding_order
-      let (active_tiles, tile_counts, is, frag_values, depth_values) =
+      let (active_tiles, tile_counts, ifrags) =
         bin_rasterize {h, w} tris
         |> coarse_rasterize {h, w} tris
         |> fine_rasterize {h, w} tris
@@ -315,11 +313,21 @@ module TiledTriangleRasterizer : TriangleRasterizerSpec = \(V: VaryingSpec) ->
             let g j =
               let tri_index = chunk_index * tile_size + j
               in if tri_index < tri_count
-                 then ( is[tri_offset + tri_index]
-                      , frag_values[tri_offset + tri_index]
-                      , depth_values[tri_offset + tri_index]
+                 then let (({pixel_x, pixel_y}, Z_inv, depth, attr)) = ifrags[tri_offset + tri_index]
+                      let x = 0.5 + f32.i64 (tile_xmin + pixel_x)
+                      let y = 0.5 + f32.i64 (tile_ymin + pixel_y)
+                      in ( (pixel_y, pixel_x)
+                         , {pos = {x, y}, Z_inv, depth, attr}
+                         , depth
+                         )
+                 else ( (-1, -1)
+                      , { pos = {x = 0, y = 0}
+                        , Z_inv = 1
+                        , depth = 0
+                        , attr = ifrags[tri_offset].3
+                        }
+                      , ne_depth
                       )
-                 else ((-1, -1), frag_values[tri_offset], ne_depth)
             let (is, frag_values, depth_values) =
               tabulate tile_size g
               |> unzip3

@@ -8,8 +8,6 @@ import "../lib/github.com/abxh/futhrast/types"
 import "../lib/github.com/abxh/futhrast/setup"
 import "../lib/github.com/abxh/futhrast/math/vec"
 
-import "../lib/github.com/abxh/futhrast/rasterize/triangle_tiled"
-
 import "../lib/github.com/athas/matte/colour"
 
 local
@@ -19,7 +17,7 @@ module Varying : VaryingSpec with t = argb.colour = {
   def (*) = flip argb.scale
 }
 
-module R = RenderSetup Varying
+module R = CustomRenderSetup TiledTriangleRasterizer Varying
 
 type state =
   { h: i64

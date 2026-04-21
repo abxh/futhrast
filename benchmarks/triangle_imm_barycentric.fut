@@ -17,7 +17,7 @@ module Varying : VaryingSpec with t = argb.colour = {
   def (*) = flip argb.scale
 }
 
-module R = RenderSetup Varying
+module R = CustomRenderSetup ImmBarycentricTriangleRasterizer Varying
 
 type state =
   { h: i64
