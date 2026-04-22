@@ -49,9 +49,13 @@ module ImmBarycentricTriangleRasterizer : TriangleRasterizerSpec = \(V: VaryingS
     module coarse_mask = bitmask_64
     module fine_mask = bitmask_256
 
-    local def bin_size : i64 = 128i64
-    local def fine_size : i64 = 16i64
-    local def coarse_size : i64 = bin_size / fine_size
+    local def bin_shift : i64 = 7
+    local def fine_shift : i64 = 4
+    local def coarse_shift : i64 = bin_shift - fine_shift
+
+    local def bin_size : i64 = 1 << bin_shift
+    local def fine_size : i64 = 1 << fine_shift
+    local def coarse_size : i64 = 1 << coarse_shift
 
     def barycentric = F32.barycentric
     def barycentric_affine = F32.barycentric_perspective_corrected_w_Z_inv_t
@@ -81,8 +85,6 @@ module ImmBarycentricTriangleRasterizer : TriangleRasterizerSpec = \(V: VaryingS
 
     open wcoeffs
 
-    def div_ceil (n: i64) (m: i64) = (n + (m - 1)) / m
-
     def calc_signed_tri_area_2 ((v0, v1, v2): (vec2f.t, vec2f.t, vec2f.t)) : f32 =
       let v0v1 = v1 vec2f.- v0
       let v0v2 = v2 vec2f.- v0
@@ -95,35 +97,34 @@ module ImmBarycentricTriangleRasterizer : TriangleRasterizerSpec = \(V: VaryingS
     def fine_rasterize [n]
                        {h = _: i64, w = w: i64}
                        (tris: []triangle)
-                       ((tile_ids, tri_indices): ([n]i64, [n]i64)) =
-      let bins_w = w `div_ceil` bin_size
-      let tiles_per_bin =
+                       ((tile_ids, tri_indices): ([n]u32, [n]i64)) =
+      let bins_w =
         assert (fine_size * fine_size == fine_mask.num_bits)
-        (coarse_size * coarse_size)
+        ((w + bin_size - 1) >> bin_shift)
       let f (tile_id, tri_index) =
-        let bin_index = tile_id / tiles_per_bin
-        let tile_index = tile_id %% tiles_per_bin
-        let bin_xmin = (bin_index %% bins_w) * bin_size
-        let bin_ymin = (bin_index / bins_w) * bin_size
-        let tile_xmin = (tile_index %% coarse_size) * fine_size + bin_xmin
-        let tile_ymin = (tile_index / coarse_size) * fine_size + bin_ymin
+        let bin_index = i64.u32 tile_id >> (2 * coarse_shift)
+        let tile_index = i64.u32 tile_id & (coarse_size * coarse_size - 1)
+        let bin_xmin = (bin_index %% bins_w) << bin_shift
+        let bin_ymin = (bin_index / bins_w) << bin_shift
+        let tile_xmin = ((tile_index & (coarse_size - 1)) << fine_shift) + bin_xmin
+        let tile_ymin = ((tile_index >> coarse_shift) << fine_shift) + bin_ymin
         let (f0, f1, f2) = tris[tri_index]
         let verts = (f0.pos, f1.pos, f2.pos)
         let wzero = calc_wcoeffs verts {x = f32.i64 tile_xmin, y = f32.i64 tile_ymin}
         let wdelta = calc_wdelta verts
         let inv_area_2 = 1 / calc_signed_tri_area_2 verts
         let g pixel_index =
-          let y = 0.5 + f32.i64 (pixel_index / fine_size)
-          let x = 0.5 + f32.i64 (pixel_index %% fine_size)
+          let y = 0.5 + f32.i64 (pixel_index >> fine_shift)
+          let x = 0.5 + f32.i64 (pixel_index & (fine_size - 1))
           let w = wzero vec3f.+ (x vec3f.* wdelta.x) vec3f.+ (y vec3f.* wdelta.y)
           in w.x >= 0 && w.y >= 0 && w.z >= 0
-        let mask = fine_mask.from_pred_seq g (fine_size * fine_size)
+        let mask = fine_mask.from_pred_seq g
         in ({tile_xmin, tile_ymin}, {tri_index, wzero, wdelta, inv_area_2}, mask)
       let sz ((_, _, mask)) = fine_mask.size mask
       let get (({tile_xmin, tile_ymin}, {tri_index, wzero, wdelta, inv_area_2}, mask)) set_pixel_index =
         let pixel_index = fine_mask.find_ith_set_bit mask set_pixel_index
-        let pixel_x = pixel_index %% fine_size
-        let pixel_y = pixel_index / fine_size
+        let pixel_x = pixel_index & (fine_size - 1)
+        let pixel_y = pixel_index >> fine_shift
         let x = pixel_x + tile_xmin
         let y = pixel_y + tile_ymin
         let pos = {x = 0.5 + f32.i64 x, y = 0.5 + f32.i64 y}
@@ -165,34 +166,36 @@ module ImmBarycentricTriangleRasterizer : TriangleRasterizerSpec = \(V: VaryingS
     def coarse_rasterize [n]
                          {h = h: i64, w = w: i64}
                          (tris: []triangle)
-                         ((bin_indices, tri_indices): ([n]i64, [n]i64)) =
+                         ((bin_indices, tri_indices): ([n]u16, [n]i64)) =
       let fb_bbox = {xmin = 0, ymin = 0, xmax = w, ymax = h}
-      let bins_w = w `div_ceil` bin_size
-      let tiles_per_bin = assert (coarse_size * coarse_size == coarse_mask.num_bits) (coarse_size * coarse_size)
+      let bins_w =
+        assert (coarse_size * coarse_size == coarse_mask.num_bits
+                && coarse_size * coarse_size - 1 <= i64.u8 u8.highest)
+        ((w + bin_size - 1) >> bin_shift)
       let f (bin_index, tri_index) =
         let (f0, f1, f2) = tris[tri_index]
         let tri_bbox = calc_tri_bbox (f0, f1, f2)
-        let bin_xmin = (bin_index %% bins_w) * bin_size
-        let bin_ymin = (bin_index / bins_w) * bin_size
+        let bin_xmin = (i64.u16 bin_index %% bins_w) << bin_shift
+        let bin_ymin = (i64.u16 bin_index / bins_w) << bin_shift
         let verts = (f0.pos, f1.pos, f2.pos)
         let wzero = calc_wcoeffs verts {x = 0, y = 0}
         let wdelta = calc_wdelta verts
         let f (tile_index: i64) =
           let tile_bbox =
-            let xmin = (tile_index %% coarse_size) * fine_size + bin_xmin
-            let ymin = (tile_index / coarse_size) * fine_size + bin_ymin
+            let xmin = ((tile_index & (coarse_size - 1)) << fine_shift) + bin_xmin
+            let ymin = ((tile_index >> coarse_shift) << fine_shift) + bin_ymin
             let xmax = xmin + fine_size
             let ymax = ymin + fine_size
             in {xmin, ymin, xmax, ymax}
           in if !bbox_overlaps tile_bbox fb_bbox || !bbox_overlaps tile_bbox tri_bbox
              then false
              else tri_overlaps_bbox tile_bbox wzero wdelta
-        let mask = coarse_mask.from_pred_seq f (coarse_size * coarse_size)
+        let mask = coarse_mask.from_pred_seq f
         in (bin_index, mask)
       let sz (_, (_, mask)) = coarse_mask.size mask
       let get (tri_index, (bin_index, mask)) set_tile_index =
         let tile_index = coarse_mask.find_ith_set_bit mask set_tile_index
-        let tile_id = bin_index * tiles_per_bin + tile_index
+        let tile_id = (u32.u16 bin_index << u32.i64 (2 * coarse_shift)) + u32.i64 tile_index
         in (tile_id, tri_indices[tri_index])
       in zip bin_indices tri_indices
          |> map f
@@ -201,15 +204,17 @@ module ImmBarycentricTriangleRasterizer : TriangleRasterizerSpec = \(V: VaryingS
          |> unzip
 
     def bin_rasterize {h = h: i64, w = w: i64} (tris: []triangle) =
-      let bins_h = h `div_ceil` bin_size
-      let bins_w = w `div_ceil` bin_size
+      let (bins_h, bins_w) =
+        let bins_h = (h + bin_size - 1) >> bin_shift
+        let bins_w = (w + bin_size - 1) >> bin_shift
+        in assert (bins_h * bins_w - 1 <= i64.u16 u16.highest) (bins_h, bins_w)
       let f tri_index =
         let tri_bbox = calc_tri_bbox tris[tri_index]
         let bin_bbox =
-          let xmin = (tri_bbox.xmin / bin_size) `i64.max` 0
-          let ymin = (tri_bbox.ymin / bin_size) `i64.max` 0
-          let xmax = (tri_bbox.xmax `div_ceil` bin_size) `i64.min` bins_w
-          let ymax = (tri_bbox.ymax `div_ceil` bin_size) `i64.min` bins_h
+          let xmin = (tri_bbox.xmin >> bin_shift) `i64.max` 0
+          let ymin = (tri_bbox.ymin >> bin_shift) `i64.max` 0
+          let xmax = ((tri_bbox.xmax + bin_size - 1) >> bin_shift) `i64.min` bins_w
+          let ymax = ((tri_bbox.ymax + bin_size - 1) >> bin_shift) `i64.min` bins_h
           in {xmin, ymin, xmax, ymax}
         in (tri_index, bin_bbox)
       let sz (_, bbox) =
@@ -223,7 +228,7 @@ module ImmBarycentricTriangleRasterizer : TriangleRasterizerSpec = \(V: VaryingS
         let x = bbox.xmin + dx
         let y = bbox.ymin + dy
         let bin_index = y * bins_w + x
-        in (bin_index, tri_index)
+        in (u16.i64 bin_index, tri_index)
       in indices tris
          |> map f
          |> expand sz get
