@@ -316,16 +316,16 @@ module TiledTriangleRasterizer : TriangleRasterizerSpec = \(V: VaryingSpec) ->
                |> unzip2
              in reduce_by_index depth_tile depth_select ne_depth is depth_values
       let g i =
-        let tile_i = i >> (2 * fine_shift)
-        let local_i = i & (fine_size * fine_size - 1)
-        let (bin_index, tile_index) = active_tiles[tile_i]
+        let tile_index = i >> (2 * fine_shift)
+        let pixel_index = i & (fine_size * fine_size - 1)
+        let (bin_index, tile_index) = active_tiles[tile_index]
         let bins_w = (w + bin_size - 1) >> bin_shift
         let bin_xmin = (i64.u16 bin_index %% bins_w) << bin_shift
         let bin_ymin = (i64.u16 bin_index / bins_w) << bin_shift
         let tile_xmin = ((i64.u8 tile_index & (coarse_size - 1)) << fine_shift) + bin_xmin
         let tile_ymin = ((i64.u8 tile_index >> coarse_shift) << fine_shift) + bin_ymin
-        let pixel_y = local_i >> fine_shift
-        let pixel_x = local_i & (fine_size - 1)
+        let pixel_y = pixel_index >> fine_shift
+        let pixel_x = pixel_index & (fine_size - 1)
         let x = pixel_x + tile_xmin
         let y = pixel_y + tile_ymin
         in y * w + x
