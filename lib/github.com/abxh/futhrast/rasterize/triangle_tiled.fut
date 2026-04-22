@@ -92,8 +92,6 @@ module TiledTriangleRasterizer : TriangleRasterizerSpec = \(V: VaryingSpec) ->
 
     open wcoeffs
 
-    def div_ceil (n: i64) (m: i64) = (n + (m - 1)) / m
-
     def ilog2 (n: i64) : i64 = i64.i32 (63 - i64.clz n)
 
     def calc_signed_tri_area_2 ((v0, v1, v2): (vec2f.t, vec2f.t, vec2f.t)) : f32 =
@@ -111,20 +109,20 @@ module TiledTriangleRasterizer : TriangleRasterizerSpec = \(V: VaryingSpec) ->
                        ((tile_flags, bin_indices, tile_indices, tri_indices): ([n]bool, [n]u16, [n]u8, [n]i64)) =
       let bins_w =
         assert (fine_size * fine_size == fine_mask.num_bits)
-        (w `div_ceil` bin_size)
+        ((w + bin_size - 1) >> bin_shift)
       let f (bin_index, tile_index, tri_index) =
-        let bin_xmin = (i64.u16 bin_index %% bins_w) * bin_size
-        let bin_ymin = (i64.u16 bin_index / bins_w) * bin_size
-        let tile_xmin = (i64.u8 tile_index %% coarse_size) * fine_size + bin_xmin
-        let tile_ymin = (i64.u8 tile_index / coarse_size) * fine_size + bin_ymin
+        let bin_xmin = (i64.u16 bin_index %% bins_w) << bin_shift
+        let bin_ymin = (i64.u16 bin_index / bins_w) << bin_shift
+        let tile_xmin = ((i64.u8 tile_index & (coarse_size - 1)) << fine_shift) + bin_xmin
+        let tile_ymin = ((i64.u8 tile_index >> coarse_shift) << fine_shift) + bin_ymin
         let (f0, f1, f2) = tris[tri_index]
         let verts = (f0.pos, f1.pos, f2.pos)
         let wzero = calc_wcoeffs verts {x = f32.i64 tile_xmin, y = f32.i64 tile_ymin}
         let wdelta = calc_wdelta verts
         let inv_area_2 = 1 / calc_signed_tri_area_2 verts
         let g pixel_index =
-          let y = 0.5 + f32.i64 (pixel_index / fine_size)
-          let x = 0.5 + f32.i64 (pixel_index %% fine_size)
+          let y = 0.5 + f32.i64 (pixel_index >> fine_shift)
+          let x = 0.5 + f32.i64 (pixel_index & (fine_size - 1))
           let w = wzero vec3f.+ (x vec3f.* wdelta.x) vec3f.+ (y vec3f.* wdelta.y)
           in w.x >= 0 && w.y >= 0 && w.z >= 0
         let mask = fine_mask.from_pred_seq g
@@ -132,8 +130,8 @@ module TiledTriangleRasterizer : TriangleRasterizerSpec = \(V: VaryingSpec) ->
       let sz ((_, _, mask)) = fine_mask.size mask
       let get (({tile_xmin, tile_ymin}, {tri_index, wzero, wdelta, inv_area_2}, mask)) set_pixel_index =
         let pixel_index = fine_mask.find_ith_set_bit mask set_pixel_index
-        let pixel_x = pixel_index %% fine_size
-        let pixel_y = pixel_index / fine_size
+        let pixel_x = pixel_index & (fine_size - 1)
+        let pixel_y = pixel_index >> fine_shift
         let x = pixel_x + tile_xmin
         let y = pixel_y + tile_ymin
         let pos = {x = 0.5 + f32.i64 x, y = 0.5 + f32.i64 y}
@@ -197,22 +195,22 @@ module TiledTriangleRasterizer : TriangleRasterizerSpec = \(V: VaryingSpec) ->
                          ((bin_flags, bin_indices, tri_indices): ([n]bool, [n]u16, [n]i64)) =
       let fb_bbox = {xmin = 0, ymin = 0, xmax = w, ymax = h}
       let bins_w =
-        assert (coarse_size * coarse_size == coarse_mask.num_bits && coarse_size * coarse_size - 1 <= i64.u8 u8.highest)
-        (w `div_ceil` bin_size)
-      let tiles_per_bin = (coarse_size * coarse_size)
-      let num_bits = (ilog2 tiles_per_bin)
+        assert (coarse_size * coarse_size == coarse_mask.num_bits
+                && coarse_size * coarse_size - 1 <= i64.u8 u8.highest)
+        ((w + bin_size - 1) >> bin_shift)
+      let num_bits = 2 * coarse_shift
       let f (bin_index, tri_index) =
         let (f0, f1, f2) = tris[tri_index]
         let tri_bbox = calc_tri_bbox (f0, f1, f2)
-        let bin_xmin = (i64.u16 bin_index %% bins_w) * bin_size
-        let bin_ymin = (i64.u16 bin_index / bins_w) * bin_size
+        let bin_xmin = (i64.u16 bin_index %% bins_w) << bin_shift
+        let bin_ymin = (i64.u16 bin_index / bins_w) << bin_shift
         let verts = (f0.pos, f1.pos, f2.pos)
         let wzero = calc_wcoeffs verts {x = 0, y = 0}
         let wdelta = calc_wdelta verts
         let f (tile_index: i64) =
           let tile_bbox =
-            let xmin = (tile_index %% coarse_size) * fine_size + bin_xmin
-            let ymin = (tile_index / coarse_size) * fine_size + bin_ymin
+            let xmin = ((tile_index & (coarse_size - 1)) << fine_shift) + bin_xmin
+            let ymin = ((tile_index >> coarse_shift) << fine_shift) + bin_ymin
             let xmax = xmin + fine_size
             let ymax = ymin + fine_size
             in {xmin, ymin, xmax, ymax}
@@ -248,11 +246,10 @@ module TiledTriangleRasterizer : TriangleRasterizerSpec = \(V: VaryingSpec) ->
       let f tri_index =
         let tri_bbox = calc_tri_bbox tris[tri_index]
         let bin_bbox =
-          let xmin = (tri_bbox.xmin / bin_size) `i64.max` 0
-          let ymin = (tri_bbox.ymin / bin_size) `i64.max` 0
-          let xmax = (tri_bbox.xmax `div_ceil` bin_size) `i64.min` bins_w
-          let ymax = (tri_bbox.ymax `div_ceil` bin_size) `i64.min` bins_h
-          in {xmin, ymin, xmax, ymax}
+          let xmin = (tri_bbox.xmin >> bin_shift) `i64.max` 0
+          let ymin = (tri_bbox.ymin >> bin_shift) `i64.max` 0
+          let xmax = ((tri_bbox.xmax + bin_size - 1) >> bin_shift) `i64.min` bins_w
+          let ymax = ((tri_bbox.ymax + bin_size - 1) >> bin_shift) `i64.min` bins_h in {xmin, ymin, xmax, ymax}
         in (tri_index, bin_bbox)
       let sz (_, bbox) =
         let bbox_h = bbox.ymax - bbox.ymin
@@ -281,7 +278,7 @@ module TiledTriangleRasterizer : TriangleRasterizerSpec = \(V: VaryingSpec) ->
                   ((ne_target, ne_depth): (target, f32))
                   ((target_buffer, depth_buffer): ([h][w]target, [h][w]f32))
                   (tris: [](fragment V.t, fragment V.t, fragment V.t)) : ([h][w]target, [h][w]f32) =
-      let bins_w = assert (fine_size * fine_size == tri_block_size) (w `div_ceil` bin_size)
+      let bins_w = assert (fine_size * fine_size == tri_block_size) ((w + bin_size - 1) >> bin_shift)
       let tris = tris |> map ensure_cclockwise_winding_order
       let (active_tiles, tile_counts, is, frag_values, depth_values) =
         bin_rasterize {h, w} tris
@@ -291,15 +288,15 @@ module TiledTriangleRasterizer : TriangleRasterizerSpec = \(V: VaryingSpec) ->
       let f i =
         let tri_count = tile_counts[i]
         let tri_offset = tile_offsets[i]
-        let num_chunks = tri_count `div_ceil` tri_block_size
+        let num_chunks = (tri_count + tri_block_size - 1) >> tri_block_shift
         let (bin_index, tile_index) = active_tiles[i]
-        let bin_xmin = (i64.u16 bin_index %% bins_w) * bin_size
-        let bin_ymin = (i64.u16 bin_index / bins_w) * bin_size
-        let tile_xmin = (i64.u8 tile_index %% coarse_size) * fine_size + bin_xmin
-        let tile_ymin = (i64.u8 tile_index / coarse_size) * fine_size + bin_ymin
+        let bin_xmin = (i64.u16 bin_index %% bins_w) << bin_shift
+        let bin_ymin = (i64.u16 bin_index / bins_w) << bin_shift
+        let tile_xmin = ((i64.u8 tile_index & (coarse_size - 1)) << fine_shift) + bin_xmin
+        let tile_ymin = ((i64.u8 tile_index >> coarse_shift) << fine_shift) + bin_ymin
         let f pixel_index =
-          let pixel_x = pixel_index %% fine_size
-          let pixel_y = pixel_index / fine_size
+          let pixel_x = pixel_index & (fine_size - 1)
+          let pixel_y = pixel_index >> fine_shift
           let x = pixel_x + tile_xmin
           let y = pixel_y + tile_ymin
           in depth_buffer[y, x]
@@ -312,23 +309,23 @@ module TiledTriangleRasterizer : TriangleRasterizerSpec = \(V: VaryingSpec) ->
                        let (y, x) = is[global_tri_index]
                        let depth = depth_values[global_tri_index]
                        let (pixel_y, pixel_x) = (y - tile_ymin, x - tile_xmin)
-                       in (pixel_y * fine_size + pixel_x, depth)
+                       in ((pixel_y << fine_shift) + pixel_x, depth)
                   else (-1, ne_depth)
              let (is, depth_values) =
                tabulate tri_block_size g
                |> unzip2
              in reduce_by_index depth_tile depth_select ne_depth is depth_values
       let g i =
-        let tile_i = i / (fine_size * fine_size)
-        let local_i = i %% (fine_size * fine_size)
+        let tile_i = i >> (2 * fine_shift)
+        let local_i = i & (fine_size * fine_size - 1)
         let (bin_index, tile_index) = active_tiles[tile_i]
-        let bins_w = w `div_ceil` bin_size
-        let bin_xmin = (i64.u16 bin_index %% bins_w) * bin_size
-        let bin_ymin = (i64.u16 bin_index / bins_w) * bin_size
-        let tile_xmin = (i64.u8 tile_index %% coarse_size) * fine_size + bin_xmin
-        let tile_ymin = (i64.u8 tile_index / coarse_size) * fine_size + bin_ymin
-        let pixel_y = local_i / fine_size
-        let pixel_x = local_i %% fine_size
+        let bins_w = (w + bin_size - 1) >> bin_shift
+        let bin_xmin = (i64.u16 bin_index %% bins_w) << bin_shift
+        let bin_ymin = (i64.u16 bin_index / bins_w) << bin_shift
+        let tile_xmin = ((i64.u8 tile_index & (coarse_size - 1)) << fine_shift) + bin_xmin
+        let tile_ymin = ((i64.u8 tile_index >> coarse_shift) << fine_shift) + bin_ymin
+        let pixel_y = local_i >> fine_shift
+        let pixel_x = local_i & (fine_size - 1)
         let x = pixel_x + tile_xmin
         let y = pixel_y + tile_ymin
         in y * w + x
