@@ -92,7 +92,11 @@ module TiledTriangleRasterizer : TriangleRasterizerSpec = \(V: VaryingSpec) ->
 
     open wcoeffs
 
-    def ilog2 (n: i64) : i64 = i64.i32 (63 - i64.clz n)
+    #[inline]
+    def is_pow2 (n: i64) : bool = n > 0 && n & (n - 1) == 0
+
+    #[inline]
+    def ilog2_ceil (n: i64) : i64 = i64.bool (!is_pow2 n) + i64.i32 (63 - i64.clz n)
 
     def calc_signed_tri_area_2 ((v0, v1, v2): (vec2f.t, vec2f.t, vec2f.t)) : f32 =
       let v0v1 = v1 vec2f.- v0
@@ -242,7 +246,7 @@ module TiledTriangleRasterizer : TriangleRasterizerSpec = \(V: VaryingSpec) ->
       let bins_h = (h + bin_size - 1) >> bin_shift
       let num_bits =
         assert (bins_h * bins_w - 1 <= i64.u16 u16.highest)
-        ilog2 (bins_h * bins_w)
+        ilog2_ceil (bins_h * bins_w)
       let f tri_index =
         let tri_bbox = calc_tri_bbox tris[tri_index]
         let bin_bbox =
