@@ -47,10 +47,10 @@ module ImmBarycentricTriangleRasterizer : TriangleRasterizerSpec = \(V: VaryingS
       }
 
     module coarse_mask = bitmask_64
-    module fine_mask = bitmask_256
+    module fine_mask = bitmask_64
 
-    local def bin_shift : i64 = 7
-    local def fine_shift : i64 = 4
+    local def bin_shift : i64 = 6
+    local def fine_shift : i64 = 3
     local def coarse_shift : i64 = bin_shift - fine_shift
 
     local def bin_size : i64 = 1 << bin_shift
@@ -58,8 +58,8 @@ module ImmBarycentricTriangleRasterizer : TriangleRasterizerSpec = \(V: VaryingS
     local def coarse_size : i64 = 1 << coarse_shift
 
     def barycentric = F32.barycentric
-    def barycentric_affine = F32.barycentric_perspective_corrected_w_Z_inv_t
-    def barycentric_affine_attr = V.barycentric_perspective_corrected_w_Z_inv_t
+    def barycentric_pc = F32.barycentric_perspective_corrected_w_Z_inv_t
+    def barycentric_pc_attr = V.barycentric_perspective_corrected_w_Z_inv_t
 
     local
     module wcoeffs = {
@@ -94,10 +94,29 @@ module ImmBarycentricTriangleRasterizer : TriangleRasterizerSpec = \(V: VaryingS
     def ensure_cclockwise_winding_order ((f0, f1, f2): triangle) : triangle =
       if calc_signed_tri_area_2 (f0.pos, f1.pos, f2.pos) >= 0 then (f0, f1, f2) else (f0, f2, f1)
 
+    def calc_tri_bbox ((f0, f1, f2): triangle) : bbox i64 =
+      let (p0, p1, p2) = (f0.pos, f1.pos, f2.pos)
+      in { xmin = (p0.x `f32.min` p1.x `f32.min` p2.x) |> f32.floor >-> i64.f32
+         , ymin = (p0.y `f32.min` p1.y `f32.min` p2.y) |> f32.floor >-> i64.f32
+         , xmax = (p0.x `f32.max` p1.x `f32.max` p2.x) |> f32.ceil >-> i64.f32
+         , ymax = (p0.y `f32.max` p1.y `f32.max` p2.y) |> f32.ceil >-> i64.f32
+         }
+
+    def bbox_overlaps (a: bbox i64) (b: bbox i64) =
+      !(a.xmax <= b.xmin || a.xmin >= b.xmax || a.ymax <= b.ymin || a.ymin >= b.ymax)
+
+    def tri_overlaps_bbox (bbox: bbox i64) (wzero: vec3f.t) (wdelta: {x: vec3f.t, y: vec3f.t}) =
+      let w0 = wzero vec3f.+ (f32.i64 bbox.xmin vec3f.* wdelta.x) vec3f.+ (f32.i64 bbox.ymin vec3f.* wdelta.y)
+      let w1 = w0 vec3f.+ (f32.i64 bin_size vec3f.* wdelta.y)
+      let w2 = w0 vec3f.+ (f32.i64 bin_size vec3f.* wdelta.x)
+      let w3 = w2 vec3f.+ (f32.i64 bin_size vec3f.* wdelta.y)
+      let is_outside proj = proj w0 < 0 && proj w1 < 0 && proj w2 < 0 && proj w3 < 0
+      in !(is_outside (.x) || is_outside (.y) || is_outside (.z))
+
     def fine_rasterize [n]
                        {h = _: i64, w = w: i64}
                        (tris: []triangle)
-                       ((tile_ids, tri_indices): ([n]u32, [n]i64)) =
+                       ((tile_ids, tri_idxs): ([n]u32, [n]i64)) =
       let bins_w =
         assert (fine_size * fine_size == fine_mask.num_bits)
         ((w + bin_size - 1) >> bin_shift)
@@ -136,37 +155,18 @@ module ImmBarycentricTriangleRasterizer : TriangleRasterizerSpec = \(V: VaryingS
           |> vec3f.to_tuple
         let (f0, f1, f2) = tris[tri_index]
         let Z_inv = barycentric f0.Z_inv f1.Z_inv f2.Z_inv w
-        let depth = barycentric_affine Z_inv (f0.depth, f0.Z_inv) (f1.depth, f1.Z_inv) (f2.depth, f2.Z_inv) w
-        let attr = barycentric_affine_attr Z_inv (f0.attr, f0.Z_inv) (f1.attr, f1.Z_inv) (f2.attr, f2.Z_inv) w
+        let depth = barycentric_pc Z_inv (f0.depth, f0.Z_inv) (f1.depth, f1.Z_inv) (f2.depth, f2.Z_inv) w
+        let attr = barycentric_pc_attr Z_inv (f0.attr, f0.Z_inv) (f1.attr, f1.Z_inv) (f2.attr, f2.Z_inv) w
         in ((y, x), {pos, Z_inv, depth, attr}, depth)
-      in zip tile_ids tri_indices
+      in zip tile_ids tri_idxs
          |> map f
          |> expand sz get
          |> unzip3
 
-    def calc_tri_bbox ((f0, f1, f2): triangle) : bbox i64 =
-      let (p0, p1, p2) = (f0.pos, f1.pos, f2.pos)
-      in { xmin = (p0.x `f32.min` p1.x `f32.min` p2.x) |> f32.floor >-> i64.f32
-         , ymin = (p0.y `f32.min` p1.y `f32.min` p2.y) |> f32.floor >-> i64.f32
-         , xmax = (p0.x `f32.max` p1.x `f32.max` p2.x) |> f32.ceil >-> i64.f32
-         , ymax = (p0.y `f32.max` p1.y `f32.max` p2.y) |> f32.ceil >-> i64.f32
-         }
-
-    def bbox_overlaps (a: bbox i64) (b: bbox i64) =
-      !(a.xmax <= b.xmin || a.xmin >= b.xmax || a.ymax <= b.ymin || a.ymin >= b.ymax)
-
-    def tri_overlaps_bbox (bbox: bbox i64) (wzero: vec3f.t) (wdelta: {x: vec3f.t, y: vec3f.t}) =
-      let w0 = wzero vec3f.+ (f32.i64 bbox.xmin vec3f.* wdelta.x) vec3f.+ (f32.i64 bbox.ymin vec3f.* wdelta.y)
-      let w1 = w0 vec3f.+ (f32.i64 bin_size vec3f.* wdelta.y)
-      let w2 = w0 vec3f.+ (f32.i64 bin_size vec3f.* wdelta.x)
-      let w3 = w2 vec3f.+ (f32.i64 bin_size vec3f.* wdelta.y)
-      let is_outside proj = proj w0 < 0 && proj w1 < 0 && proj w2 < 0 && proj w3 < 0
-      in !(is_outside (.x) || is_outside (.y) || is_outside (.z))
-
     def coarse_rasterize [n]
                          {h = h: i64, w = w: i64}
                          (tris: []triangle)
-                         ((bin_indices, tri_indices): ([n]u16, [n]i64)) =
+                         ((bin_idxs, tri_idxs): ([n]u16, [n]i64)) =
       let fb_bbox = {xmin = 0, ymin = 0, xmax = w, ymax = h}
       let bins_w =
         assert (coarse_size * coarse_size == coarse_mask.num_bits
@@ -196,8 +196,8 @@ module ImmBarycentricTriangleRasterizer : TriangleRasterizerSpec = \(V: VaryingS
       let get (tri_index, (bin_index, mask)) set_tile_index =
         let tile_index = coarse_mask.find_ith_set_bit mask set_tile_index
         let tile_id = (u32.u16 bin_index << u32.i64 (2 * coarse_shift)) + u32.i64 tile_index
-        in (tile_id, tri_indices[tri_index])
-      in zip bin_indices tri_indices
+        in (tile_id, tri_idxs[tri_index])
+      in zip bin_idxs tri_idxs
          |> map f
          |> zip (iota n)
          |> expand sz get

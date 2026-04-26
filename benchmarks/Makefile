@@ -12,6 +12,7 @@ build:
 	./extract_obj_data ../african_head.obj
 	./extract_obj_data ../monkey.obj
 	./extract_obj_data ../penger.obj
+	./extract_obj_data ../dragon.obj
 	rm -f extract_obj_data
 
 define RUN_TEMPLATE
@@ -25,7 +26,7 @@ run_$(1):
 	rm -f $(1).c $(1) $(1).fut.tuning
 endef
 
-run: run_point run_line run_triangle_imm_scanline run_triangle_imm_barycentric run_triangle_tiled
+run: run_point run_line run_triangle_imm_scanline run_triangle_imm_barycentric triangle_tiled
 
 run_point: $(eval $(call RUN_TEMPLATE,point))
 
@@ -43,3 +44,4 @@ clean:
 	rm -f *.fut.tuning
 	rm -f *.json
 	rm -rf *.prof
+	rm -f *.md

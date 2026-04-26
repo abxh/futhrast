@@ -40,8 +40,8 @@ module LineRasterizer : LineRasterizerSpec = \(V: VaryingSpec) ->
     local
     type line = (fragment_generic i32 V.t, fragment_generic i32 V.t)
 
-    def lerp_affine_f32 = F32.lerp_perspective_corrected_w_Z_inv_t
-    def lerp_affine_attr = V.lerp_perspective_corrected_w_Z_inv_t
+    def lerp_pc_f32 = F32.lerp_perspective_corrected_w_Z_inv_t
+    def lerp_pc_attr = V.lerp_perspective_corrected_w_Z_inv_t
 
     def compare_i32 (l: i32) (r: i32) : i32 =
       i32.bool (l < r) - i32.bool (l > r)
@@ -68,8 +68,8 @@ module LineRasterizer : LineRasterizerSpec = \(V: VaryingSpec) ->
                 }
               let t = f32.from_fraction i (get_line_size (v0, v1) - 1)
               let Z_inv = f32.lerp v0.Z_inv v1.Z_inv t
-              let depth = lerp_affine_f32 Z_inv (v0.depth, v0.Z_inv) (v1.depth, v1.Z_inv) t
-              let attr = lerp_affine_attr Z_inv (v0.attr, v0.Z_inv) (v1.attr, v1.Z_inv) t
+              let depth = lerp_pc_f32 Z_inv (v0.depth, v0.Z_inv) (v1.depth, v1.Z_inv) t
+              let attr = lerp_pc_attr Z_inv (v0.attr, v0.Z_inv) (v1.attr, v1.Z_inv) t
               in {pos, Z_inv, depth, attr}
          else let dir = compare_i32 (p0.y) (p1.y)
               let sl = get_line_slope {x = p0.y, y = p0.x} {x = p1.y, y = p1.x}
@@ -79,8 +79,8 @@ module LineRasterizer : LineRasterizerSpec = \(V: VaryingSpec) ->
                 }
               let t = f32.from_fraction i (get_line_size (v0, v1) - 1)
               let Z_inv = f32.lerp v0.Z_inv v1.Z_inv t
-              let depth = lerp_affine_f32 Z_inv (v0.depth, v0.Z_inv) (v1.depth, v1.Z_inv) t
-              let attr = lerp_affine_attr Z_inv (v0.attr, v0.Z_inv) (v1.attr, v1.Z_inv) t
+              let depth = lerp_pc_f32 Z_inv (v0.depth, v0.Z_inv) (v1.depth, v1.Z_inv) t
+              let attr = lerp_pc_attr Z_inv (v0.attr, v0.Z_inv) (v1.attr, v1.Z_inv) t
               in {pos, depth, Z_inv, attr}
 
     def round_fragment (f: fragment_generic f32 V.t) : fragment_generic i32 V.t =

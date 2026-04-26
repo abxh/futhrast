@@ -41,8 +41,8 @@ module ImmTriangleRasterizer : TriangleRasterizerSpec = \(V: VaryingSpec) ->
     type triangle = (fragment V.t, fragment V.t, fragment V.t)
 
     def barycentric = F32.barycentric
-    def barycentric_affine = F32.barycentric_perspective_corrected_w_Z_inv_t
-    def barycentric_affine_attr = V.barycentric_perspective_corrected_w_Z_inv_t
+    def barycentric_pc = F32.barycentric_perspective_corrected_w_Z_inv_t
+    def barycentric_pc_attr = V.barycentric_perspective_corrected_w_Z_inv_t
 
     def calc_signed_tri_area_2 ((v0, v1, v2): (vec2f.t, vec2f.t, vec2f.t)) : f32 =
       let v0v1 = v1 vec2f.- v0
@@ -81,8 +81,8 @@ module ImmTriangleRasterizer : TriangleRasterizerSpec = \(V: VaryingSpec) ->
       let w = (w0, w1, w2)
       let pos = {x = 0.5 + f32.i32 pos.x, y = 0.5 + f32.i32 pos.y}
       let Z_inv = barycentric f0.Z_inv f1.Z_inv f2.Z_inv w
-      let depth = barycentric_affine Z_inv (f0.depth, f0.Z_inv) (f1.depth, f1.Z_inv) (f2.depth, f2.Z_inv) w
-      let attr = barycentric_affine_attr Z_inv (f0.attr, f0.Z_inv) (f1.attr, f1.Z_inv) (f2.attr, f2.Z_inv) w
+      let depth = barycentric_pc Z_inv (f0.depth, f0.Z_inv) (f1.depth, f1.Z_inv) (f2.depth, f2.Z_inv) w
+      let attr = barycentric_pc_attr Z_inv (f0.attr, f0.Z_inv) (f1.attr, f1.Z_inv) (f2.attr, f2.Z_inv) w
       in {pos, Z_inv, depth, attr}
 
     def sort_y_ascending ((v0, v1, v2): (vec2f.t, vec2f.t, vec2f.t)) =

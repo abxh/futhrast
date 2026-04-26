@@ -21,8 +21,6 @@ module type PointRasterizerSpec =
 -- | point rasterizer
 module PointRasterizer : PointRasterizerSpec = \(V: VaryingSpec) ->
   {
-    def ilog2 (n: i64) : i64 = i64.i32 (63 - i64.clz n)
-
     def unpack_fragment (f: fragment V.t) =
       let y = i64.f32 (f.pos.y + 0.5)
       let x = i64.f32 (f.pos.x + 0.5)

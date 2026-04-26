@@ -11,25 +11,34 @@ type~ lys_state =
   , zoom: f32
   , angle: f32
   , angle_delta: f32
+  , zmax: f32
+  , zmin: f32
   , verts_bunny: [](f32, f32, f32)
   , verts_monkey: [](f32, f32, f32)
   , verts_head: [](f32, f32, f32)
   , verts_penger: [](f32, f32, f32)
+  , verts_dragon: [](f32, f32, f32)
   , inds_bunny: []i64
   , inds_monkey: []i64
   , inds_head: []i64
   , inds_penger: []i64
-  , render_model: #bunny | #monkey | #head | #penger
+  , inds_dragon: []i64
+  , render_model:   #bunny
+                  | #monkey
+                  | #head
+                  | #penger
+                  | #dragon
   , render_kind: #points | #lines | #triangles
   , triangle_rasterizer_mode: #immediate_scanline | #immediate_barycentric | #tiled_barycentric
   , inner_mode: #yes | #no
   }
 
 module lys_text_content = {
-  type text_content = (i64, i64)
+  type text_content = (i64, i64, i64)
 
   def text_format () =
     "FPS: %ld\n"
+    ++ "number of triangles: %ld\n"
     ++ "triangle rasterizer mode: %[immediate (scanline)|immediate (barycentric)|tiled (barycentric)]\n"
     ++ "t: switch rasterizer mode\n"
     ++ "\n"
@@ -37,6 +46,7 @@ module lys_text_content = {
     ++ "m: monkey\n"
     ++ "h: african head\n"
     ++ "p: penger\n"
+    ++ "r: dragon\n"
     ++ "\n"
     ++ "0: snap into position\n"
     ++ "1|2|3: point|line|triangle\n"
@@ -46,12 +56,19 @@ module lys_text_content = {
     ++ "i: see inner/outer\n"
 
   def text_content (render_duration: f32) (s: lys_state) : text_content =
+    let num_triangles =
+      match s.render_model
+      case #bunny -> length s.inds_bunny / 3
+      case #monkey -> length s.inds_monkey / 3
+      case #head -> length s.inds_head / 3
+      case #penger -> length s.inds_penger / 3
+      case #dragon -> length s.inds_dragon / 3
     let tr_mode =
       match s.triangle_rasterizer_mode
       case #immediate_scanline -> 0
       case #immediate_barycentric -> 1
       case #tiled_barycentric -> 2
-    in (i64.f32 render_duration, tr_mode)
+    in (i64.f32 render_duration, num_triangles, tr_mode)
 
   def text_colour = const argb.white
 }
@@ -63,6 +80,7 @@ module lys_file = {
     ++ "monkey.obj,"
     ++ "african_head.obj,"
     ++ "penger.obj,"
+    ++ "dragon.obj,"
 
   def load_bin _ _ s = s
 
@@ -76,6 +94,8 @@ module lys_file = {
       s with inds_head = is
     case 3 ->
       s with inds_penger = is
+    case 4 ->
+      s with inds_dragon = is
     case _ ->
       s
 
@@ -89,6 +109,8 @@ module lys_file = {
       s with verts_head = vs
     case 3 ->
       s with verts_penger = vs
+    case 4 ->
+      s with verts_dragon = vs
     case _ ->
       s
 
@@ -108,6 +130,8 @@ module lys : lys with text_content = lys_text_content.text_content = {
     { w
     , h
     , zoom = 1
+    , zmin = 0
+    , zmax = 0
     , pos = (0, 0, 0)
     , pos_delta = (0, 0, 0)
     , angle = 0
@@ -116,10 +140,12 @@ module lys : lys with text_content = lys_text_content.text_content = {
     , inds_monkey = replicate 0 (-1)
     , inds_head = replicate 0 (-1)
     , inds_penger = replicate 0 (-1)
+    , inds_dragon = replicate 0 (-1)
     , verts_bunny = replicate 0 (0, 0, 0)
     , verts_monkey = replicate 0 (0, 0, 0)
     , verts_head = replicate 0 (0, 0, 0)
     , verts_penger = replicate 0 (0, 0, 0)
+    , verts_dragon = replicate 0 (0, 0, 0)
     , render_model = #bunny
     , render_kind = #triangles
     , triangle_rasterizer_mode = #immediate_barycentric
@@ -144,6 +170,8 @@ module lys : lys with text_content = lys_text_content.text_content = {
     then s with render_model = #head
     else if key == SDLK_p
     then s with render_model = #penger
+    else if key == SDLK_r
+    then s with render_model = #dragon
     else if key == SDLK_t
     then s with triangle_rasterizer_mode = match s.triangle_rasterizer_mode
            case #immediate_scanline -> #immediate_barycentric
@@ -204,6 +232,7 @@ module lys : lys with text_content = lys_text_content.text_content = {
   local
   module Varying : VaryingSpec with t = argb.colour = {
     type t = argb.colour
+    def one = argb.white
     def (+) = argb.add_linear
     def (*) = flip argb.scale
   }
@@ -215,14 +244,24 @@ module lys : lys with text_content = lys_text_content.text_content = {
   local
   def on_vertex (s: state) (v: (f32, f32, f32)) : vertex_out Varying.t =
     let v = v |> vec3f.from_tuple
-    let v = v with z = -v.z
+    let v =
+      v with z = -v.z
     let angle = s.angle
     let cos_a = f32.cos angle
     let sin_a = f32.sin angle
     let x' = v.x * cos_a + v.z * sin_a
     let z' = -v.x * sin_a + v.z * cos_a
-    in { pos = {x = (x' * s.zoom) + s.pos.0, y = (v.y * s.zoom) + s.pos.1, z = z', w = 1}
-       , attr = argb.scale argb.white ((z' + 1) * 0.5)
+    let z' = z'
+    let zn =
+      let zrange = (s.zmin - s.zmax)
+      in (s.zmin - z') / zrange
+    in { pos =
+           { x = (x' * s.zoom) + s.pos.0
+           , y = (v.y * s.zoom) + s.pos.1
+           , z = zn
+           , w = 1
+           }
+       , attr = argb.scale argb.white zn
        }
 
   local
@@ -238,13 +277,17 @@ module lys : lys with text_content = lys_text_content.text_content = {
       , depth_type = #reversed_z
       , flip_y = true
       }
-    let ne_depth = if render_config.depth_type == #reversed_z then -f32.inf else f32.inf
+    let ne_depth = if render_config.depth_type == #reversed_z then f32.lowest else f32.highest
     let (verts, inds) =
       match s.render_model
       case #bunny -> (s.verts_bunny, s.inds_bunny)
       case #monkey -> (s.verts_monkey, s.inds_monkey)
       case #head -> (s.verts_head, s.inds_head)
       case #penger -> (s.verts_penger, s.inds_penger)
+      case #dragon -> (s.verts_dragon, s.inds_dragon)
+    let s =
+      s with zmin = reduce f32.min f32.highest (map (.2) verts)
+        with zmax = reduce f32.max f32.lowest (map (.2) verts) + 1
     in match s.render_kind
        case #points ->
          init_framebuffer {w = s.w, h = s.h} (argb.black, ne_depth)
