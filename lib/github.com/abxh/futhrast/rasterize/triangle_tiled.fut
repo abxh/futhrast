@@ -5,7 +5,6 @@ import "../../../diku-dk/segmented/segmented"
 import "../../../diku-dk/sorts/radix_sort"
 
 import "../utils/bitmask"
-import "../utils/segmented_radix_sort"
 
 import "../types"
 import "../math/vec"
