@@ -25,14 +25,8 @@ module LineRasterizer : LineRasterizerSpec = \(V: VaryingSpec) ->
     -- based on:
     -- futhark-book.readthedocs.io/en/latest/irregular-flattening.html#drawing-lines
 
-    local
-    module V = VaryingExtensions (V)
-
-    local
-    module F32 = VaryingExtensions (
-      {
-        open f32
-      })
+    local module V = VaryingExtensions V
+    local module F32 = VaryingExtensions f32
 
     type fragment_generic 'a 'varying =
       {pos: {x: a, y: a}, depth: f32, Z_inv: f32, attr: varying}

@@ -7,6 +7,7 @@ import "../utils/bitmask"
 
 import "../types"
 import "../math/vec"
+import "../math/fixedpoint"
 
 -- | triangle rasterizer specfication
 module type TriangleRasterizerSpec =
@@ -27,13 +28,8 @@ module type TriangleRasterizerSpec =
 -- | immediate-mode barycentric triangle rasterizer with binning
 module ImmBarycentricTriangleRasterizer : TriangleRasterizerSpec = \(V: VaryingSpec) ->
   {
-    local module V = VaryingExtensions (V)
-
-    local
-    module F32 = VaryingExtensions (
-      {
-        open f32
-      })
+    local module V = VaryingExtensions V
+    local module F32 = VaryingExtensions f32
 
     local
     type triangle = (fragment V.t, fragment V.t, fragment V.t)
@@ -85,6 +81,49 @@ module ImmBarycentricTriangleRasterizer : TriangleRasterizerSpec = \(V: VaryingS
 
     open wcoeffs
 
+    local
+    module wcoeffs_fp = {
+      local open vec2fp
+
+      local def eps = fixedpoint.raw 1
+
+      def calc_wcoeffs_fp ((v0, v1, v2): (vec2fp.t, vec2fp.t, vec2fp.t)) (p: vec2fp.t) : vec3fp.t =
+        let v0p = p - v0
+        let v1p = p - v1
+        let v2p = p - v2
+        let v1v2 = v2 - v1
+        let v2v0 = v0 - v2
+        let v0v1 = v1 - v0
+        in (cross v1v2 v1p, cross v2v0 v2p, cross v0v1 v0p) |> vec3fp.from_tuple
+
+      def calc_wdelta_fp ((v0, v1, v2): (vec2fp.t, vec2fp.t, vec2fp.t)) : {x: vec3fp.t, y: vec3fp.t} =
+        let v1v2 = v2 - v1
+        let v2v0 = v0 - v2
+        let v0v1 = v1 - v0
+        let delta_wx =
+          ( fixedpoint.neg v1v2.y
+          , fixedpoint.neg v2v0.y
+          , fixedpoint.neg v0v1.y
+          )
+          |> vec3fp.from_tuple
+        let delta_wy = (v1v2.x, v2v0.x, v0v1.x) |> vec3fp.from_tuple
+        in {x = delta_wx, y = delta_wy}
+
+      def calc_edge_bias (src: vec2fp.t)
+                         (dest: vec2fp.t) : fixedpoint.t =
+        let edge = (vec2fp.-) dest src
+        let points_up = edge.y fixedpoint.> fixedpoint.zero
+        let points_right = edge.x fixedpoint.> fixedpoint.zero
+        let is_left_edge = points_up
+        let is_top_edge = (fixedpoint.abs edge.y) fixedpoint.<= eps && points_right
+        in if is_left_edge || is_top_edge then fixedpoint.zero else fixedpoint.neg eps
+
+      def calc_tri_edge_bias ((v0, v1, v2): (vec2fp.t, vec2fp.t, vec2fp.t)) : vec3fp.t =
+        {x = calc_edge_bias v1 v2, y = calc_edge_bias v2 v0, z = calc_edge_bias v0 v1}
+    }
+
+    open wcoeffs_fp
+
     def calc_signed_tri_area_2 ((v0, v1, v2): (vec2f.t, vec2f.t, vec2f.t)) : f32 =
       let v0v1 = v1 vec2f.- v0
       let v0v2 = v2 vec2f.- v0
@@ -129,14 +168,22 @@ module ImmBarycentricTriangleRasterizer : TriangleRasterizerSpec = \(V: VaryingS
         let tile_ymin = ((tile_index >> coarse_shift) << fine_shift) + bin_ymin
         let (f0, f1, f2) = tris[tri_index]
         let verts = (f0.pos, f1.pos, f2.pos)
-        let wzero = calc_wcoeffs verts {x = f32.i64 tile_xmin, y = f32.i64 tile_ymin}
-        let wdelta = calc_wdelta verts
         let inv_area_2 = 1 / calc_signed_tri_area_2 verts
+        let verts_fp =
+          ( vec2f.map fixedpoint.f32 f0.pos
+          , vec2f.map fixedpoint.f32 f1.pos
+          , vec2f.map fixedpoint.f32 f2.pos
+          )
+        let wzero = calc_wcoeffs_fp verts_fp {x = fixedpoint.i64 tile_xmin, y = fixedpoint.i64 tile_ymin}
+        let wdelta = calc_wdelta_fp verts_fp
+        let wbias = calc_tri_edge_bias verts_fp
         let g pixel_index =
-          let y = 0.5 + f32.i64 (pixel_index >> fine_shift)
-          let x = 0.5 + f32.i64 (pixel_index & (fine_size - 1))
-          let w = wzero vec3f.+ (x vec3f.* wdelta.x) vec3f.+ (y vec3f.* wdelta.y)
-          in w.x >= 0 && w.y >= 0 && w.z >= 0
+          let y = (fixedpoint.f32 0.5) fixedpoint.+ fixedpoint.i64 (pixel_index >> fine_shift)
+          let x = (fixedpoint.f32 0.5) fixedpoint.+ fixedpoint.i64 (pixel_index & (fine_size - 1))
+          let w = wzero vec3fp.+ wbias vec3fp.+ (x vec3fp.* wdelta.x) vec3fp.+ (y vec3fp.* wdelta.y)
+          in w.x fixedpoint.>= (fixedpoint.i64 0)
+             && w.y fixedpoint.>= (fixedpoint.i64 0)
+             && w.z fixedpoint.>= (fixedpoint.i64 0)
         let mask = fine_mask.from_pred_seq g
         in ({tile_xmin, tile_ymin}, {tri_index, wzero, wdelta, inv_area_2}, mask)
       let sz ((_, _, mask)) = fine_mask.size mask
@@ -149,8 +196,9 @@ module ImmBarycentricTriangleRasterizer : TriangleRasterizerSpec = \(V: VaryingS
         let pos = {x = 0.5 + f32.i64 x, y = 0.5 + f32.i64 y}
         let w =
           wzero
-          vec3f.+ ((0.5 + f32.i64 pixel_x) vec3f.* wdelta.x)
-          vec3f.+ ((0.5 + f32.i64 pixel_y) vec3f.* wdelta.y)
+          vec3fp.+ (((fixedpoint.f32 0.5) fixedpoint.+ fixedpoint.i64 pixel_x) vec3fp.* wdelta.x)
+          vec3fp.+ (((fixedpoint.f32 0.5) fixedpoint.+ fixedpoint.i64 pixel_y) vec3fp.* wdelta.y)
+          |> vec3fp.map fixedpoint.to_f32
           |> (inv_area_2 vec3f.*)
           |> vec3f.to_tuple
         let (f0, f1, f2) = tris[tri_index]

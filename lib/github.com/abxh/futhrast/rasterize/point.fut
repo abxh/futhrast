@@ -60,7 +60,7 @@ module PointRasterizerTest = {
   -- note: above do not satisfy all the algrebraic properties required for varying,
   -- but is defined such for testing purposes
 
-  local module M = PointRasterizer (V)
+  local module M = PointRasterizer V
 
   def rasterize_point_test [n] (h: i64) (w: i64) (vs: [n](f32, f32)) : [h][w]i32 =
     let target_buffer = replicate h (replicate w false)

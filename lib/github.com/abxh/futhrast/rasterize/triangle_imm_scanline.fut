@@ -29,13 +29,8 @@ module ImmScanlineTriangleRasterizer : TriangleRasterizerSpec = \(V: VaryingSpec
     -- github.com/melsman/canvas
     -- sunshine2k.de/coding/java/TriangleRasterization/TriangleRasterization.html
 
-    local module V = VaryingExtensions (V)
-
-    local
-    module F32 = VaryingExtensions (
-      {
-        open f32
-      })
+    local module V = VaryingExtensions V
+    local module F32 = VaryingExtensions f32
 
     local
     type triangle = (fragment V.t, fragment V.t, fragment V.t)
@@ -53,7 +48,7 @@ module ImmScanlineTriangleRasterizer : TriangleRasterizerSpec = \(V: VaryingSpec
     def ensure_cclockwise_winding_order ((f0, f1, f2): triangle) : triangle =
       if calc_signed_tri_area_2 (f0.pos, f1.pos, f2.pos) >= 0 then (f0, f1, f2) else (f0, f2, f1)
 
-    def calc_barycentric_coeffs ((v0, v1, v2): (vec2f.t, vec2f.t, vec2f.t)) (p: vec2f.t) : (f32, f32, f32) =
+    def calc_barycentric_coeffs_normalized ((v0, v1, v2): (vec2f.t, vec2f.t, vec2f.t)) (p: vec2f.t) : (f32, f32, f32) =
       let signed_area_2 = calc_signed_tri_area_2 (v0, v1, v2)
       let v1p = p vec2f.- v1
       let v2p = p vec2f.- v2
@@ -71,15 +66,14 @@ module ImmScanlineTriangleRasterizer : TriangleRasterizerSpec = \(V: VaryingSpec
     def get_point_in_horizontal_line (tris: [](fragment V.t, fragment V.t, fragment V.t))
                                      (((pl, _), tri_index): ((vec2i32.t, vec2i32.t), i64))
                                      (i: i64) =
-      let pos = {x = pl.x + i32.i64 i, y = pl.y}
+      let pos = {x = 0.5 + f32.i32 pl.x + f32.i64 i, y = f32.i32 pl.y}
       let (f0, f1, f2) = tris[tri_index]
-      let (w0, w1, w2) = calc_barycentric_coeffs (f0.pos, f1.pos, f2.pos) (vec2i32.map (f32.i32) pos)
+      let (w0, w1, w2) = calc_barycentric_coeffs_normalized (f0.pos, f1.pos, f2.pos) pos
       -- workaround to fix rounding errors resulting in glitched pixels:
       let w0 = f32.max 0 (f32.min 1 w0)
       let w1 = f32.max 0 (f32.min 1 w1)
       let w2 = f32.max 0 (f32.min 1 w2)
       let w = (w0, w1, w2)
-      let pos = {x = 0.5 + f32.i32 pos.x, y = 0.5 + f32.i32 pos.y}
       let Z_inv = barycentric f0.Z_inv f1.Z_inv f2.Z_inv w
       let depth = barycentric_pc Z_inv (f0.depth, f0.Z_inv) (f1.depth, f1.Z_inv) (f2.depth, f2.Z_inv) w
       let attr = barycentric_pc_attr Z_inv (f0.attr, f0.Z_inv) (f1.attr, f1.Z_inv) (f2.attr, f2.Z_inv) w
@@ -143,7 +137,6 @@ module ImmScanlineTriangleRasterizer : TriangleRasterizerSpec = \(V: VaryingSpec
       let x = i64.f32 f.pos.x
       in ((y, x), f, f.depth)
 
-    local
     def tri_bbox_check {w = w: i64, h = h: i64} (f0: fragment V.t, f1: fragment V.t, f2: fragment V.t) : bool =
       let (p0, p1, p2) = (f0.pos, f1.pos, f2.pos)
       let xmin = (p0.x `f32.min` p1.x `f32.min` p2.x) |> (f32.floor >-> i64.f32)
