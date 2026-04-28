@@ -12,7 +12,7 @@ import "math/vec"
 open import "types"
 open import "rasterize/point"
 open import "rasterize/line"
-open import "rasterize/triangle_imm"
+open import "rasterize/triangle_imm_scanline"
 open import "rasterize/triangle_imm_barycentric"
 open import "rasterize/triangle_tiled"
 
@@ -244,4 +244,4 @@ module CustomRenderSetup (T: TriangleRasterizerSpec) : RenderSetupSpec = \(V: Va
   }
 
 -- | Default renderer setup
-module RenderSetup = CustomRenderSetup ImmTriangleRasterizer
+module RenderSetup = CustomRenderSetup TiledTriangleRasterizer 

@@ -22,7 +22,7 @@ module type TriangleRasterizerSpec =
   }
 
 -- | immediate-mode scanline triangle rasterizer
-module ImmTriangleRasterizer : TriangleRasterizerSpec = \(V: VaryingSpec) ->
+module ImmScanlineTriangleRasterizer : TriangleRasterizerSpec = \(V: VaryingSpec) ->
   {
     -- based on:
     -- futhark-book.readthedocs.io/en/latest/irregular-flattening.html#drawing-triangles
@@ -182,7 +182,7 @@ module ImmTriangleRasterizer : TriangleRasterizerSpec = \(V: VaryingSpec) ->
   }
 
 -- | immediate-mode scanline triangle rasterizer for testing purposes. can use the REPL for this
-module ImmTriangleRasterizerTest = {
+module ImmScanlineTriangleRasterizerTest = {
   local
   module V : VaryingSpec with t = bool = {
     type t = bool
@@ -193,7 +193,7 @@ module ImmTriangleRasterizerTest = {
   -- note: above do not satisfy all the algrebraic properties required for varying,
   -- but is defined such for testing purposes
 
-  local module M = ImmTriangleRasterizer (V)
+  local module M = ImmScanlineTriangleRasterizer (V)
 
   def rasterize_triangle_imm_test [n] (h: i64) (w: i64) (vs: [n]((f32, f32), (f32, f32), (f32, f32))) : [h][w]i32 =
     let target_buffer = replicate h (replicate w false)
@@ -212,4 +212,4 @@ module ImmTriangleRasterizerTest = {
        |> map (map i32.bool)
 }
 
-open ImmTriangleRasterizerTest
+open ImmScanlineTriangleRasterizerTest
