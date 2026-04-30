@@ -42,10 +42,10 @@ module ImmBarycentricTriangleRasterizer : TriangleRasterizerSpec = \(V: VaryingS
       , ymax: a
       }
 
-    module coarse_mask = bitmask_64
+    module coarse_mask = bitmask_16
     module fine_mask = bitmask_64
 
-    local def bin_shift : i64 = 6
+    local def bin_shift : i64 = 5
     local def fine_shift : i64 = 3
     local def coarse_shift : i64 = bin_shift - fine_shift
 
@@ -146,9 +146,9 @@ module ImmBarycentricTriangleRasterizer : TriangleRasterizerSpec = \(V: VaryingS
 
     def tri_overlaps_bbox (bbox: bbox i64) (wzero: vec3f.t) (wdelta: {x: vec3f.t, y: vec3f.t}) =
       let w0 = wzero vec3f.+ (f32.i64 bbox.xmin vec3f.* wdelta.x) vec3f.+ (f32.i64 bbox.ymin vec3f.* wdelta.y)
-      let w1 = w0 vec3f.+ (f32.i64 bin_size vec3f.* wdelta.y)
-      let w2 = w0 vec3f.+ (f32.i64 bin_size vec3f.* wdelta.x)
-      let w3 = w2 vec3f.+ (f32.i64 bin_size vec3f.* wdelta.y)
+      let w1 = w0 vec3f.+ (f32.i64 (bbox.ymax - bbox.ymin) vec3f.* wdelta.y)
+      let w2 = w0 vec3f.+ (f32.i64 (bbox.xmax - bbox.xmin) vec3f.* wdelta.x)
+      let w3 = w2 vec3f.+ (f32.i64 (bbox.ymax - bbox.ymin) vec3f.* wdelta.y)
       let is_outside proj = proj w0 < 0 && proj w1 < 0 && proj w2 < 0 && proj w3 < 0
       in !(is_outside (.x) || is_outside (.y) || is_outside (.z))
 

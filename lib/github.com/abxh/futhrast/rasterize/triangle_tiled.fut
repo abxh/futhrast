@@ -43,13 +43,13 @@ module TiledTriangleRasterizer : TriangleRasterizerSpec = \(V: VaryingSpec) ->
       , ymax: a
       }
 
-    module coarse_mask = bitmask_64
+    module coarse_mask = bitmask_16
     module fine_mask = bitmask_64
 
-    local def bin_shift : i64 = 6
+    local def bin_shift : i64 = 5
     local def fine_shift : i64 = 3
     local def coarse_shift : i64 = bin_shift - fine_shift
-    local def frag_block_shift : i64 = 7
+    local def frag_block_shift : i64 = 8
 
     local def bin_size : i64 = 1 << bin_shift
     local def fine_size : i64 = 1 << fine_shift
@@ -153,9 +153,9 @@ module TiledTriangleRasterizer : TriangleRasterizerSpec = \(V: VaryingSpec) ->
 
     def tri_overlaps_bbox (bbox: bbox i64) (wzero: vec3f.t) (wdelta: {x: vec3f.t, y: vec3f.t}) =
       let w0 = wzero vec3f.+ (f32.i64 bbox.xmin vec3f.* wdelta.x) vec3f.+ (f32.i64 bbox.ymin vec3f.* wdelta.y)
-      let w1 = w0 vec3f.+ (f32.i64 bin_size vec3f.* wdelta.y)
-      let w2 = w0 vec3f.+ (f32.i64 bin_size vec3f.* wdelta.x)
-      let w3 = w2 vec3f.+ (f32.i64 bin_size vec3f.* wdelta.y)
+      let w1 = w0 vec3f.+ (f32.i64 (bbox.ymax - bbox.ymin) vec3f.* wdelta.y)
+      let w2 = w0 vec3f.+ (f32.i64 (bbox.xmax - bbox.xmin) vec3f.* wdelta.x)
+      let w3 = w2 vec3f.+ (f32.i64 (bbox.ymax - bbox.ymin) vec3f.* wdelta.y)
       let is_outside proj = proj w0 < 0 && proj w1 < 0 && proj w2 < 0 && proj w3 < 0
       in !(is_outside (.x) || is_outside (.y) || is_outside (.z))
 
@@ -276,7 +276,8 @@ module TiledTriangleRasterizer : TriangleRasterizerSpec = \(V: VaryingSpec) ->
       let bins_w = (w + bin_size - 1) >> bin_shift
       let bins_h = (h + bin_size - 1) >> bin_shift
       let num_bits =
-        assert (bins_h * bins_w - 1 <= i64.u16 u16.highest)
+        assert (coarse_size * fine_size == bin_size
+                && bins_h * bins_w - 1 <= i64.u16 u16.highest)
         ilog2_ceil (bins_h * bins_w)
       let f tri_index =
         let tri_bbox = calc_tri_bbox tris[tri_index]
