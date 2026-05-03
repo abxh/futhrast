@@ -156,9 +156,8 @@ module ImmBarycentricTriangleRasterizer : TriangleRasterizerSpec = \(V: VaryingS
                        {h = _: i64, w = w: i64}
                        (tris: []triangle)
                        ((tile_ids, tri_idxs): ([n]u32, [n]i64)) =
-      let bins_w =
-        assert (fine_size * fine_size == fine_mask.num_bits)
-        ((w + bin_size - 1) >> bin_shift)
+      let fine_size = assert (fine_size * fine_size == fine_mask.num_bits) fine_size
+      let bins_w = ((w + bin_size - 1) >> bin_shift)
       let f (tile_id, tri_index) =
         let bin_index = i64.u32 tile_id >> (2 * coarse_shift)
         let tile_index = i64.u32 tile_id & (coarse_size * coarse_size - 1)
@@ -215,11 +214,10 @@ module ImmBarycentricTriangleRasterizer : TriangleRasterizerSpec = \(V: VaryingS
                          {h = h: i64, w = w: i64}
                          (tris: []triangle)
                          ((bin_idxs, tri_idxs): ([n]u16, [n]i64)) =
+      let coarse_size = assert (coarse_size * coarse_size == coarse_mask.num_bits) coarse_size
+      let coarse_size = assert (coarse_size * coarse_size - 1 <= i64.u8 u8.highest) coarse_size
       let fb_bbox = {xmin = 0, ymin = 0, xmax = w, ymax = h}
-      let bins_w =
-        assert (coarse_size * coarse_size == coarse_mask.num_bits
-                && coarse_size * coarse_size - 1 <= i64.u8 u8.highest)
-        ((w + bin_size - 1) >> bin_shift)
+      let bins_w = ((w + bin_size - 1) >> bin_shift)
       let f (bin_index, tri_index) =
         let (f0, f1, f2) = tris[tri_index]
         let tri_bbox = calc_tri_bbox (f0, f1, f2)
@@ -252,10 +250,9 @@ module ImmBarycentricTriangleRasterizer : TriangleRasterizerSpec = \(V: VaryingS
          |> unzip
 
     def bin_rasterize {h = h: i64, w = w: i64} (tris: []triangle) =
-      let (bins_h, bins_w) =
-        let bins_h = (h + bin_size - 1) >> bin_shift
-        let bins_w = (w + bin_size - 1) >> bin_shift
-        in assert (bins_h * bins_w - 1 <= i64.u16 u16.highest) (bins_h, bins_w)
+      let bins_h = (h + bin_size - 1) >> bin_shift
+      let bins_w = (w + bin_size - 1) >> bin_shift
+      let (bins_h, bins_w) = assert (bins_h * bins_w - 1 <= i64.u16 u16.highest) (bins_h, bins_w)
       let f tri_index =
         let tri_bbox = calc_tri_bbox tris[tri_index]
         let bin_bbox =

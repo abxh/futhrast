@@ -1,5 +1,4 @@
 import "../types"
-import "../../../diku-dk/sorts/radix_sort"
 
 local
 -- | point rasterizer specfication

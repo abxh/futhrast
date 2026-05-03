@@ -2,7 +2,7 @@
 -- assumes non-zero triangle area
 
 import "../../../diku-dk/segmented/segmented"
-import "../../../diku-dk/sorts/radix_sort"
+import "../../../diku-dk/sorts/bucket_sort"
 
 import "../utils/bitmask"
 
@@ -46,15 +46,17 @@ module TiledTriangleRasterizer : TriangleRasterizerSpec = \(V: VaryingSpec) ->
     module coarse_mask = bitmask_16
     module fine_mask = bitmask_64
 
-    local def bin_shift : i64 = 5
-    local def fine_shift : i64 = 3
-    local def coarse_shift : i64 = bin_shift - fine_shift
-    local def frag_block_shift : i64 = 8
+    def bin_shift : i64 = 5
+    def fine_shift : i64 = 3
+    def frag_block_shift : i64 = 8
+    def num_workgroups_shift : i64 = 4
 
+    local def coarse_shift : i64 = bin_shift - fine_shift
     local def bin_size : i64 = 1 << bin_shift
     local def fine_size : i64 = 1 << fine_shift
     local def coarse_size : i64 = 1 << coarse_shift
     local def frag_block_size : i64 = 1 << frag_block_shift
+    local def num_workgroups : i64 = 1 << num_workgroups_shift
 
     def barycentric = F32.barycentric
     def barycentric_pc = F32.barycentric_perspective_corrected_w_Z_inv_t
@@ -127,9 +129,15 @@ module TiledTriangleRasterizer : TriangleRasterizerSpec = \(V: VaryingSpec) ->
 
     open wcoeffs_fp
 
-    def is_pow2 (n: i64) : bool = n > 0 && n & (n - 1) == 0
+    def gcd (a: i64) (b: i64) : i64 = (.0) (loop (a, b) while b != 0 do (b, a %% b))
 
-    def ilog2_ceil (n: i64) : i64 = i64.bool (!is_pow2 n) + i64.i32 (63 - i64.clz n)
+    def find_coprime n = loop d = 2 while gcd n d != 1 do d + 1
+
+    def is_pow2 (n: i64) : bool = n & (n - 1) == 0
+
+    def ilog2 (n: i64) : i64 = i64.i32 (63 - i64.clz n)
+
+    def ilog2_ceil (n: i64) : i64 = i64.bool (!is_pow2 n) + ilog2 n
 
     def calc_signed_tri_area_2 ((v0, v1, v2): (vec2f.t, vec2f.t, vec2f.t)) : f32 =
       let v0v1 = v1 vec2f.- v0
@@ -168,9 +176,8 @@ module TiledTriangleRasterizer : TriangleRasterizerSpec = \(V: VaryingSpec) ->
                        {h = _: i64, w = w: i64}
                        (tris: []triangle)
                        ((bin_idxs, tile_idxs, tri_idxs): ([n]u16, [n]u8, [n]i64)) =
-      let bins_w =
-        assert (fine_size * fine_size == fine_mask.num_bits)
-        ((w + bin_size - 1) >> bin_shift)
+      let fine_size = assert (fine_size * fine_size == fine_mask.num_bits) fine_size
+      let bins_w = ((w + bin_size - 1) >> bin_shift)
       let f (bin_index, tile_index, tri_index) =
         let bin_xmin = (i64.u16 bin_index %% bins_w) << bin_shift
         let bin_ymin = (i64.u16 bin_index / bins_w) << bin_shift
@@ -235,11 +242,10 @@ module TiledTriangleRasterizer : TriangleRasterizerSpec = \(V: VaryingSpec) ->
                          {h = h: i64, w = w: i64}
                          (tris: []triangle)
                          ((bin_idxs, tri_idxs): ([n]u16, [n]i64)) =
+      let coarse_size = assert (coarse_size * coarse_size == coarse_mask.num_bits) coarse_size
+      let coarse_size = assert (coarse_size * coarse_size - 1 <= i64.u8 u8.highest) coarse_size
       let fb_bbox = {xmin = 0, ymin = 0, xmax = w, ymax = h}
-      let bins_w =
-        assert (coarse_size * coarse_size == coarse_mask.num_bits
-                && coarse_size * coarse_size - 1 <= i64.u8 u8.highest)
-        ((w + bin_size - 1) >> bin_shift)
+      let bins_w = ((w + bin_size - 1) >> bin_shift)
       let f (bin_index, tri_index) =
         let (f0, f1, f2) = tris[tri_index]
         let tri_bbox = calc_tri_bbox (f0, f1, f2)
@@ -272,13 +278,22 @@ module TiledTriangleRasterizer : TriangleRasterizerSpec = \(V: VaryingSpec) ->
         |> unzip3
       in (bin_idxs, tile_idxs, tri_idxs)
 
+    def permute_bin_index {stride = stride: i64, offset = offset: i64}
+                          {bins_h = _: i64, bins_w = bins_w: i64}
+                          (bin_index: u16) =
+      -- x-shift+offset?
+      -- should ensure gcd(bins_w,stride)=1 and offset < bins_w
+      let x = i64.u16 bin_index %% bins_w
+      let y = i64.u16 bin_index / bins_w
+      let x' = (x + y * stride + offset) % bins_w
+      in y * bins_w + x'
+
     def bin_rasterize {h = h: i64, w = w: i64} (tris: []triangle) =
       let bins_w = (w + bin_size - 1) >> bin_shift
       let bins_h = (h + bin_size - 1) >> bin_shift
-      let num_bits =
-        assert (coarse_size * fine_size == bin_size
-                && bins_h * bins_w - 1 <= i64.u16 u16.highest)
-        ilog2_ceil (bins_h * bins_w)
+      let (bins_h, bins_w) = assert (bins_h * bins_w - 1 <= i64.u16 u16.highest) (bins_h, bins_w)
+      let stride = find_coprime bins_w
+      let offset = bins_w / 2
       let f tri_index =
         let tri_bbox = calc_tri_bbox tris[tri_index]
         let bin_bbox =
@@ -304,7 +319,7 @@ module TiledTriangleRasterizer : TriangleRasterizerSpec = \(V: VaryingSpec) ->
         indices tris
         |> map f
         |> expand sz get
-        |> radix_sort_by_key (.0) (i32.i64 num_bits) u16.get_bit
+        |> bucket_sort_max16bit (bins_h * bins_w) ((.0) >-> permute_bin_index {stride, offset} {bins_w, bins_h})
         |> unzip
       in (bin_idxs, tri_idxs)
 
@@ -321,18 +336,28 @@ module TiledTriangleRasterizer : TriangleRasterizerSpec = \(V: VaryingSpec) ->
         |> coarse_rasterize {h, w} tris
         |> fine_rasterize {h, w} tris
       let bin_offsets = exscan (+) 0 bin_counts
-      let bin_bufs =
-        bin_idxs
-        |> map (\bin_index ->
-                  let bin_xmin = (i64.u16 bin_index %% bins_w) << bin_shift
-                  let bin_ymin = (i64.u16 bin_index / bins_w) << bin_shift
-                  let f pixel_index =
-                    let pixel_x = pixel_index & (bin_size - 1)
-                    let pixel_y = pixel_index >> bin_shift
-                    let x = pixel_x + bin_xmin
-                    let y = pixel_y + bin_ymin
-                    in if x < w && y < h then depth_buffer[y, x] else ne_depth
-                  in tabulate (bin_size * bin_size) f)
+      let get_bin_buf bin_index =
+        let bin_xmin = (i64.u16 bin_index %% bins_w) << bin_shift
+        let bin_ymin = (i64.u16 bin_index / bins_w) << bin_shift
+        let f pixel_index =
+          let pixel_x = pixel_index & (bin_size - 1)
+          let pixel_y = pixel_index >> bin_shift
+          let x = pixel_x + bin_xmin
+          let y = pixel_y + bin_ymin
+          in if x < w && y < h then depth_buffer[y, x] else ne_depth
+        in tabulate (bin_size * bin_size) f
+      let get_bin_indices i =
+        let bin_index = bin_idxs[i >> (2 * bin_shift)]
+        let bin_xmin = (i64.u16 bin_index %% bins_w) << bin_shift
+        let bin_ymin = (i64.u16 bin_index / bins_w) << bin_shift
+        let pixel_index = i & (bin_size * bin_size - 1)
+        let pixel_y = pixel_index >> bin_shift
+        let pixel_x = pixel_index & (bin_size - 1)
+        let x = pixel_x + bin_xmin
+        let y = pixel_y + bin_ymin
+        in if x < w && y < h
+           then y * w + x
+           else -1
       let f i =
         let bin_index = bin_idxs[i]
         let bin_xmin = (i64.u16 bin_index %% bins_w) << bin_shift
@@ -341,7 +366,7 @@ module TiledTriangleRasterizer : TriangleRasterizerSpec = \(V: VaryingSpec) ->
         let frag_offset = bin_offsets[i]
         let num_chunks = (frag_count + frag_block_size - 1) >> frag_block_shift
         let bin_width = bin_size
-        in loop bin_buf = copy bin_bufs[i]
+        in loop bin_buf = get_bin_buf bin_index
            for chunk_index < num_chunks do
              let g j =
                let frag_index = chunk_index * frag_block_size + j
@@ -356,25 +381,25 @@ module TiledTriangleRasterizer : TriangleRasterizerSpec = \(V: VaryingSpec) ->
                tabulate frag_block_size g
                |> unzip2
              in reduce_by_index bin_buf depth_select ne_depth is depth_values
-      let g i =
-        let bin_index = bin_idxs[i >> (2 * bin_shift)]
-        let bin_xmin = (i64.u16 bin_index %% bins_w) << bin_shift
-        let bin_ymin = (i64.u16 bin_index / bins_w) << bin_shift
-        let pixel_index = i & (bin_size * bin_size - 1)
-        let pixel_y = pixel_index >> bin_shift
-        let pixel_x = pixel_index & (bin_size - 1)
-        let x = pixel_x + bin_xmin
-        let y = pixel_y + bin_ymin
-        in if x < w && y < h
-           then y * w + x
-           else -1
       let depth_buffer =
-        #[incremental_flattening(only_intra)]
-        tabulate (length bin_idxs) f
-        |> flatten
-        |> scatter (copy (flatten depth_buffer))
-                   (tabulate (length bin_idxs * (bin_size * bin_size)) g)
-        |> unflatten
+        let num_phases = (length bin_idxs + num_workgroups - 1) >> num_workgroups_shift
+        let depth_buf =
+          loop depth_buf = copy (flatten depth_buffer)
+          for phase_index < num_phases do
+            let start = phase_index << num_workgroups_shift
+            let end = (phase_index + 1) << num_workgroups_shift `i64.min` length bin_idxs
+            let xs =
+              #[incremental_flattening(only_intra)]
+              iota (end - start)
+              |> map (+ start)
+              |> map f
+              |> flatten
+            let is =
+              iota ((end - start) * (bin_size * bin_size))
+              |> map (+ (start * (bin_size * bin_size)))
+              |> map get_bin_indices
+            in scatter depth_buf is xs
+        in depth_buf |> unflatten
       let (is, target_values) =
         zip is frag_values
         |> map (\((y, x), f) ->
