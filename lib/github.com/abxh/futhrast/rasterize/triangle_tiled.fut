@@ -49,7 +49,7 @@ module TiledTriangleRasterizer : TriangleRasterizerSpec = \(V: VaryingSpec) ->
     def bin_shift : i64 = 5
     def fine_shift : i64 = 3
     def frag_block_shift : i64 = 8
-    def num_workgroups_shift : i64 = 4
+    def num_workgroups_shift : i64 = 7
 
     local def coarse_shift : i64 = bin_shift - fine_shift
     local def bin_size : i64 = 1 << bin_shift
@@ -128,10 +128,6 @@ module TiledTriangleRasterizer : TriangleRasterizerSpec = \(V: VaryingSpec) ->
     }
 
     open wcoeffs_fp
-
-    def gcd (a: i64) (b: i64) : i64 = (.0) (loop (a, b) while b != 0 do (b, a %% b))
-
-    def find_coprime n = loop d = 2 while gcd n d != 1 do d + 1
 
     def is_pow2 (n: i64) : bool = n & (n - 1) == 0
 
@@ -278,22 +274,21 @@ module TiledTriangleRasterizer : TriangleRasterizerSpec = \(V: VaryingSpec) ->
         |> unzip3
       in (bin_idxs, tile_idxs, tri_idxs)
 
-    def permute_bin_index {stride = stride: i64, offset = offset: i64}
-                          {bins_h = _: i64, bins_w = bins_w: i64}
+    def permute_bin_index {bins_w = bins_w: i64, k = k: i64}
                           (bin_index: u16) =
-      -- x-shift+offset?
-      -- should ensure gcd(bins_w,stride)=1 and offset < bins_w
+      -- x-shift+offset
       let x = i64.u16 bin_index %% bins_w
       let y = i64.u16 bin_index / bins_w
-      let x' = (x + y * stride + offset) % bins_w
+      let n = bins_w
+      let shift = ((y * (n + 1)) / k) %% n
+      let x' = (x + shift) %% n
       in y * bins_w + x'
 
     def bin_rasterize {h = h: i64, w = w: i64} (tris: []triangle) =
       let bins_w = (w + bin_size - 1) >> bin_shift
       let bins_h = (h + bin_size - 1) >> bin_shift
       let (bins_h, bins_w) = assert (bins_h * bins_w - 1 <= i64.u16 u16.highest) (bins_h, bins_w)
-      let stride = find_coprime bins_w
-      let offset = bins_w / 2
+      let k = i64.f32 <| f32.sqrt (f32.i64 bins_w)
       let f tri_index =
         let tri_bbox = calc_tri_bbox tris[tri_index]
         let bin_bbox =
@@ -319,7 +314,7 @@ module TiledTriangleRasterizer : TriangleRasterizerSpec = \(V: VaryingSpec) ->
         indices tris
         |> map f
         |> expand sz get
-        |> bucket_sort_max16bit (bins_h * bins_w) ((.0) >-> permute_bin_index {stride, offset} {bins_w, bins_h})
+        |> bucket_sort_max16bit (bins_h * bins_w) ((.0) >-> permute_bin_index {bins_w, k})
         |> unzip
       in (bin_idxs, tri_idxs)
 
