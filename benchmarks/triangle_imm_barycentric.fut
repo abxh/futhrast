@@ -3,6 +3,7 @@
 -- compiled input @ monkey.in
 -- compiled input @ african_head.in
 -- compiled input @ penger.in
+-- compiled input @ dragon.in
 
 import "../lib/github.com/abxh/futhrast/types"
 import "../lib/github.com/abxh/futhrast/setup"
