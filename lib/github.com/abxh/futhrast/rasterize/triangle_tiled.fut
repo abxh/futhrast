@@ -2,7 +2,7 @@
 -- assumes non-zero triangle area
 
 import "../../../diku-dk/segmented/segmented"
-import "../../../diku-dk/sorts/bucket_sort"
+import "../../../diku-dk/sorts/radix_sort"
 
 import "../utils/bitmask"
 import "../utils/flatten2d"
@@ -34,7 +34,7 @@ module type TiledTriangleRasterizerOptions = {
 
   val bin_shift : i64
   val fine_shift : i64
-  val frag_block_shift : i64
+  val block_shift : i64
   val num_workgroups_shift : i64
 }
 
@@ -45,7 +45,7 @@ module TiledTriangleRasterizerDefaultOptions : TiledTriangleRasterizerOptions = 
 
   def bin_shift : i64 = 5
   def fine_shift : i64 = 3
-  def frag_block_shift : i64 = 8
+  def block_shift : i64 = 8
   def num_workgroups_shift : i64 = 7
 }
 
@@ -74,14 +74,14 @@ module TiledTriangleRasterizer (O: TiledTriangleRasterizerOptions) : TriangleRas
 
     def bin_shift : i64 = 5
     def fine_shift : i64 = 3
-    def frag_block_shift : i64 = 8
+    def block_shift : i64 = 8
     def num_workgroups_shift : i64 = 7
 
     local def coarse_shift : i64 = bin_shift - fine_shift
     local def bin_size : i64 = 1 << bin_shift
     local def fine_size : i64 = 1 << fine_shift
     local def coarse_size : i64 = 1 << coarse_shift
-    local def frag_block_size : i64 = 1 << frag_block_shift
+    local def block_size : i64 = 1 << block_shift
     local def num_workgroups : i64 = 1 << num_workgroups_shift
 
     def barycentric = F32.barycentric
@@ -161,6 +161,8 @@ module TiledTriangleRasterizer (O: TiledTriangleRasterizerOptions) : TriangleRas
 
     def ilog2_ceil (n: i64) : i64 = i64.bool (!is_pow2 n) + ilog2 n
 
+    def round_up_pow2 (n: i64) : i64 = 1 << ilog2_ceil n
+
     def calc_signed_tri_area_2 ((v0, v1, v2): (vec2f.t, vec2f.t, vec2f.t)) : f32 =
       let v0v1 = v1 vec2f.- v0
       let v0v2 = v2 vec2f.- v0
@@ -190,9 +192,7 @@ module TiledTriangleRasterizer (O: TiledTriangleRasterizerOptions) : TriangleRas
       in !(is_outside (.x) || is_outside (.y) || is_outside (.z))
 
     def calc_segment_flags_u16 [n] (is: [n]u16) : [n]bool =
-      if n == 0
-      then replicate n true
-      else replicate n true with [1:n] = map2 (!=) (tail is) (init is)
+      map (\i -> if i == 0 then true else is[i] != is[i - 1]) (iota n)
 
     def fine_rasterize [n]
                        flattener
@@ -302,9 +302,10 @@ module TiledTriangleRasterizer (O: TiledTriangleRasterizerOptions) : TriangleRas
       in (bin_idxs, tile_idxs, tri_idxs)
 
     def bin_rasterize flattener {h = h: i64, w = w: i64} (tris: []triangle) =
-      let bins_w = (w + bin_size - 1) >> bin_shift
-      let bins_h = (h + bin_size - 1) >> bin_shift
+      let bins_w = round_up_pow2 <| (w + bin_size - 1) >> bin_shift
+      let bins_h = round_up_pow2 <| (h + bin_size - 1) >> bin_shift
       let (bins_h, bins_w) = assert (bins_h * bins_w - 1 <= i64.u16 u16.highest) (bins_h, bins_w)
+      let num_bits = ilog2_ceil (bins_h * bins_w)
       let f tri_index =
         let tri_bbox = calc_tri_bbox tris[tri_index]
         let bin_bbox =
@@ -329,7 +330,7 @@ module TiledTriangleRasterizer (O: TiledTriangleRasterizerOptions) : TriangleRas
         indices tris
         |> map f
         |> expand sz get
-        |> bucket_sort_max16bit (bins_h * bins_w) ((.0) >-> i64.u16)
+        |> radix_sort_by_key (.0) (i32.i64 num_bits) u16.get_bit
         |> unzip
       in (bin_idxs, tri_idxs)
 
@@ -339,8 +340,8 @@ module TiledTriangleRasterizer (O: TiledTriangleRasterizerOptions) : TriangleRas
                   ((ne_target, ne_depth): (target, f32))
                   ((target_buffer, depth_buffer): ([h][w]target, [h][w]f32))
                   (tris: [](fragment V.t, fragment V.t, fragment V.t)) : ([h][w]target, [h][w]f32) =
-      let bins_w = (w + bin_size - 1) >> bin_shift
-      let bins_h = (h + bin_size - 1) >> bin_shift
+      let bins_w = round_up_pow2 <| (w + bin_size - 1) >> bin_shift
+      let bins_h = round_up_pow2 <| (h + bin_size - 1) >> bin_shift
       let flattener = bin_pattern.setup {h = bins_h, w = bins_w}
       let tris = tris |> map ensure_cclockwise_winding_order
       let (bin_idxs, bin_counts, is, frag_values, depth_values) =
@@ -348,18 +349,37 @@ module TiledTriangleRasterizer (O: TiledTriangleRasterizerOptions) : TriangleRas
         |> coarse_rasterize flattener {h, w} tris
         |> fine_rasterize flattener tris
       let bin_offsets = exscan (+) 0 bin_counts
-      let get_bin_buf bin_index =
+      let f i =
+        let bin_index = bin_idxs[i]
+        let frag_count = bin_counts[i]
+        let frag_offset = bin_offsets[i]
         let (bin_y, bin_x) = bin_pattern.unflatten flattener (i64.u16 bin_index)
         let bin_xmin = bin_x << bin_shift
         let bin_ymin = bin_y << bin_shift
+        let num_chunks = (frag_count + block_size - 1) >> block_shift
+        let bin_width = bin_size
         let f pixel_index =
           let pixel_x = pixel_index & (bin_size - 1)
           let pixel_y = pixel_index >> bin_shift
           let x = pixel_x + bin_xmin
           let y = pixel_y + bin_ymin
           in if x < w && y < h then depth_buffer[y, x] else ne_depth
-        in tabulate (bin_size * bin_size) f
-      let get_bin_indices i =
+        in loop bin_buf = tabulate (bin_size * bin_size) f
+           for chunk_index < num_chunks do
+             let g j =
+               let frag_index = chunk_index * block_size + j
+               in if frag_index < frag_count
+                  then let global_frag_index = frag_offset + frag_index
+                       let (y, x) = is[global_frag_index]
+                       let depth = depth_values[global_frag_index]
+                       let (pixel_y, pixel_x) = (y - bin_ymin, x - bin_xmin)
+                       in (pixel_y * bin_width + pixel_x, depth)
+                  else (-1, ne_depth)
+             let (is, depth_values) =
+               tabulate block_size g
+               |> unzip2
+             in reduce_by_index bin_buf depth_select ne_depth is depth_values
+      let g i =
         let bin_index = bin_idxs[i >> (2 * bin_shift)]
         let (bin_y, bin_x) = bin_pattern.unflatten flattener (i64.u16 bin_index)
         let bin_xmin = bin_x << bin_shift
@@ -372,30 +392,6 @@ module TiledTriangleRasterizer (O: TiledTriangleRasterizerOptions) : TriangleRas
         in if x < w && y < h
            then y * w + x
            else -1
-      let f i =
-        let bin_index = bin_idxs[i]
-        let (bin_y, bin_x) = bin_pattern.unflatten flattener (i64.u16 bin_index)
-        let bin_xmin = bin_x << bin_shift
-        let bin_ymin = bin_y << bin_shift
-        let frag_count = bin_counts[i]
-        let frag_offset = bin_offsets[i]
-        let num_chunks = (frag_count + frag_block_size - 1) >> frag_block_shift
-        let bin_width = bin_size
-        in loop bin_buf = get_bin_buf bin_index
-           for chunk_index < num_chunks do
-             let g j =
-               let frag_index = chunk_index * frag_block_size + j
-               in if frag_index < frag_count
-                  then let global_frag_index = frag_offset + frag_index
-                       let (y, x) = is[global_frag_index]
-                       let depth = depth_values[global_frag_index]
-                       let (pixel_y, pixel_x) = (y - bin_ymin, x - bin_xmin)
-                       in (pixel_y * bin_width + pixel_x, depth)
-                  else (-1, ne_depth)
-             let (is, depth_values) =
-               tabulate frag_block_size g
-               |> unzip2
-             in reduce_by_index bin_buf depth_select ne_depth is depth_values
       let depth_buffer =
         let num_phases = (length bin_idxs + num_workgroups - 1) >> num_workgroups_shift
         let depth_buf =
@@ -412,7 +408,7 @@ module TiledTriangleRasterizer (O: TiledTriangleRasterizerOptions) : TriangleRas
             let is =
               iota ((end - start) * (bin_size * bin_size))
               |> map (+ (start * (bin_size * bin_size)))
-              |> map get_bin_indices
+              |> map g
             in scatter depth_buf is xs
         in depth_buf |> unflatten
       let (is, target_values) =
