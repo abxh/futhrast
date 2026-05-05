@@ -5,6 +5,7 @@ import "../../../diku-dk/segmented/segmented"
 import "../../../diku-dk/sorts/bucket_sort"
 
 import "../utils/bitmask"
+import "../utils/flatten2d"
 
 import "../types"
 import "../math/vec"
@@ -45,6 +46,7 @@ module TiledTriangleRasterizer : TriangleRasterizerSpec = \(V: VaryingSpec) ->
 
     module coarse_mask = bitmask_16
     module fine_mask = bitmask_64
+    module bin_pattern = xshift_offset_pattern
 
     def bin_shift : i64 = 5
     def fine_shift : i64 = 3
@@ -169,14 +171,14 @@ module TiledTriangleRasterizer : TriangleRasterizerSpec = \(V: VaryingSpec) ->
       else replicate n true with [1:n] = map2 (!=) (tail is) (init is)
 
     def fine_rasterize [n]
-                       {h = _: i64, w = w: i64}
+                       flattener
                        (tris: []triangle)
                        ((bin_idxs, tile_idxs, tri_idxs): ([n]u16, [n]u8, [n]i64)) =
       let fine_size = assert (fine_size * fine_size == fine_mask.num_bits) fine_size
-      let bins_w = ((w + bin_size - 1) >> bin_shift)
       let f (bin_index, tile_index, tri_index) =
-        let bin_xmin = (i64.u16 bin_index %% bins_w) << bin_shift
-        let bin_ymin = (i64.u16 bin_index / bins_w) << bin_shift
+        let (bin_y, bin_x) = bin_pattern.unflatten flattener (i64.u16 bin_index)
+        let bin_xmin = bin_x << bin_shift
+        let bin_ymin = bin_y << bin_shift
         let tile_xmin = ((i64.u8 tile_index & (coarse_size - 1)) << fine_shift) + bin_xmin
         let tile_ymin = ((i64.u8 tile_index >> coarse_shift) << fine_shift) + bin_ymin
         let (f0, f1, f2) = tris[tri_index]
@@ -235,18 +237,19 @@ module TiledTriangleRasterizer : TriangleRasterizerSpec = \(V: VaryingSpec) ->
       in (bin_idxs, bin_counts, is, frag_values, depth_values)
 
     def coarse_rasterize [n]
+                         flattener
                          {h = h: i64, w = w: i64}
                          (tris: []triangle)
                          ((bin_idxs, tri_idxs): ([n]u16, [n]i64)) =
       let coarse_size = assert (coarse_size * coarse_size == coarse_mask.num_bits) coarse_size
       let coarse_size = assert (coarse_size * coarse_size - 1 <= i64.u8 u8.highest) coarse_size
       let fb_bbox = {xmin = 0, ymin = 0, xmax = w, ymax = h}
-      let bins_w = ((w + bin_size - 1) >> bin_shift)
       let f (bin_index, tri_index) =
         let (f0, f1, f2) = tris[tri_index]
         let tri_bbox = calc_tri_bbox (f0, f1, f2)
-        let bin_xmin = (i64.u16 bin_index %% bins_w) << bin_shift
-        let bin_ymin = (i64.u16 bin_index / bins_w) << bin_shift
+        let (bin_y, bin_x) = bin_pattern.unflatten flattener (i64.u16 bin_index)
+        let bin_xmin = bin_x << bin_shift
+        let bin_ymin = bin_y << bin_shift
         let verts = (f0.pos, f1.pos, f2.pos)
         let wzero = calc_wcoeffs verts {x = 0, y = 0}
         let wdelta = calc_wdelta verts
@@ -274,35 +277,17 @@ module TiledTriangleRasterizer : TriangleRasterizerSpec = \(V: VaryingSpec) ->
         |> unzip3
       in (bin_idxs, tile_idxs, tri_idxs)
 
-    def permute_bin_index {bins_w = bins_w: i64, k = k: i64}
-                          {y = y: i64, x = x: i64} =
-      -- x-shift+offset
-      let n = bins_w
-      let shift = ((y * (n + 1)) / k) %% n
-      let x' = (x + shift) %% n
-      in y * bins_w + x'
-
-    def unpermute_bin_index {bins_w = bins_w: i64, k = k: i64}
-                            (permuted_bin_index: i64) =
-      let x' = permuted_bin_index %% bins_w
-      let y = permuted_bin_index / bins_w
-      let n = bins_w
-      let shift = ((y * (n + 1)) / k) %% n
-      let x = (x' - shift + n) %% n
-      in y * bins_w + x
-
-    def bin_rasterize {h = h: i64, w = w: i64} (tris: []triangle) =
+    def bin_rasterize flattener {h = h: i64, w = w: i64} (tris: []triangle) =
       let bins_w = (w + bin_size - 1) >> bin_shift
       let bins_h = (h + bin_size - 1) >> bin_shift
       let (bins_h, bins_w) = assert (bins_h * bins_w - 1 <= i64.u16 u16.highest) (bins_h, bins_w)
-      let k = i64.f32 <| f32.sqrt (f32.i64 bins_w)
       let f tri_index =
         let tri_bbox = calc_tri_bbox tris[tri_index]
         let bin_bbox =
-          let xmin = (tri_bbox.xmin >> bin_shift) `i64.max` 0
-          let ymin = (tri_bbox.ymin >> bin_shift) `i64.max` 0
-          let xmax = ((tri_bbox.xmax + bin_size - 1) >> bin_shift) `i64.min` bins_w
-          let ymax = ((tri_bbox.ymax + bin_size - 1) >> bin_shift) `i64.min` bins_h
+          let xmin = (tri_bbox.xmin `i64.max` 0) >> bin_shift
+          let ymin = (tri_bbox.ymin `i64.max` 0) >> bin_shift
+          let xmax = ((tri_bbox.xmax `i64.min` w) + bin_size - 1) >> bin_shift
+          let ymax = ((tri_bbox.ymax `i64.min` h) + bin_size - 1) >> bin_shift
           in {xmin, ymin, xmax, ymax}
         in (tri_index, bin_bbox)
       let sz (_, bbox) =
@@ -315,13 +300,12 @@ module TiledTriangleRasterizer : TriangleRasterizerSpec = \(V: VaryingSpec) ->
         let dx = bbox_index %% bbox_w
         let x = bbox.xmin + dx
         let y = bbox.ymin + dy
-        in (permute_bin_index {bins_w, k} {x,y}, tri_index)
+        in (u16.i64 <| bin_pattern.flatten flattener (y, x), tri_index)
       let (bin_idxs, tri_idxs) =
         indices tris
         |> map f
         |> expand sz get
-        |> bucket_sort_max16bit (bins_h * bins_w) (.0)
-        |> map (\(bin_index, tri_index) -> (u16.i64 <| unpermute_bin_index {bins_w, k} bin_index, tri_index))
+        |> bucket_sort_max16bit (bins_h * bins_w) ((.0) >-> i64.u16)
         |> unzip
       in (bin_idxs, tri_idxs)
 
@@ -332,28 +316,30 @@ module TiledTriangleRasterizer : TriangleRasterizerSpec = \(V: VaryingSpec) ->
                   ((target_buffer, depth_buffer): ([h][w]target, [h][w]f32))
                   (tris: [](fragment V.t, fragment V.t, fragment V.t)) : ([h][w]target, [h][w]f32) =
       let bins_w = (w + bin_size - 1) >> bin_shift
+      let bins_h = (h + bin_size - 1) >> bin_shift
+      let flattener = bin_pattern.setup {h = bins_h, w = bins_w}
       let tris = tris |> map ensure_cclockwise_winding_order
       let (bin_idxs, bin_counts, is, frag_values, depth_values) =
-        bin_rasterize {h, w} tris
-        |> coarse_rasterize {h, w} tris
-        |> fine_rasterize {h, w} tris
+        bin_rasterize flattener {h, w} tris
+        |> coarse_rasterize flattener {h, w} tris
+        |> fine_rasterize flattener tris
       let bin_offsets = exscan (+) 0 bin_counts
-      let bin_bufs =
-        bin_idxs
-        |> map (\bin_index ->
-                  let bin_xmin = (i64.u16 bin_index %% bins_w) << bin_shift
-                  let bin_ymin = (i64.u16 bin_index / bins_w) << bin_shift
-                  let f pixel_index =
-                    let pixel_x = pixel_index & (bin_size - 1)
-                    let pixel_y = pixel_index >> bin_shift
-                    let x = pixel_x + bin_xmin
-                    let y = pixel_y + bin_ymin
-                    in if x < w && y < h then depth_buffer[y, x] else ne_depth
-                  in tabulate (bin_size * bin_size) f)
+      let get_bin_buf bin_index =
+        let (bin_y, bin_x) = bin_pattern.unflatten flattener (i64.u16 bin_index)
+        let bin_xmin = bin_x << bin_shift
+        let bin_ymin = bin_y << bin_shift
+        let f pixel_index =
+          let pixel_x = pixel_index & (bin_size - 1)
+          let pixel_y = pixel_index >> bin_shift
+          let x = pixel_x + bin_xmin
+          let y = pixel_y + bin_ymin
+          in if x < w && y < h then depth_buffer[y, x] else ne_depth
+        in tabulate (bin_size * bin_size) f
       let get_bin_indices i =
         let bin_index = bin_idxs[i >> (2 * bin_shift)]
-        let bin_xmin = (i64.u16 bin_index %% bins_w) << bin_shift
-        let bin_ymin = (i64.u16 bin_index / bins_w) << bin_shift
+        let (bin_y, bin_x) = bin_pattern.unflatten flattener (i64.u16 bin_index)
+        let bin_xmin = bin_x << bin_shift
+        let bin_ymin = bin_y << bin_shift
         let pixel_index = i & (bin_size * bin_size - 1)
         let pixel_y = pixel_index >> bin_shift
         let pixel_x = pixel_index & (bin_size - 1)
@@ -364,13 +350,14 @@ module TiledTriangleRasterizer : TriangleRasterizerSpec = \(V: VaryingSpec) ->
            else -1
       let f i =
         let bin_index = bin_idxs[i]
-        let bin_xmin = (i64.u16 bin_index %% bins_w) << bin_shift
-        let bin_ymin = (i64.u16 bin_index / bins_w) << bin_shift
+        let (bin_y, bin_x) = bin_pattern.unflatten flattener (i64.u16 bin_index)
+        let bin_xmin = bin_x << bin_shift
+        let bin_ymin = bin_y << bin_shift
         let frag_count = bin_counts[i]
         let frag_offset = bin_offsets[i]
         let num_chunks = (frag_count + frag_block_size - 1) >> frag_block_shift
         let bin_width = bin_size
-        in loop bin_buf = copy bin_bufs[i]
+        in loop bin_buf = get_bin_buf bin_index
            for chunk_index < num_chunks do
              let g j =
                let frag_index = chunk_index * frag_block_size + j

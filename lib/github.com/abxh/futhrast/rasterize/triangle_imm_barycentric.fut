@@ -252,14 +252,14 @@ module ImmBarycentricTriangleRasterizer : TriangleRasterizerSpec = \(V: VaryingS
     def bin_rasterize {h = h: i64, w = w: i64} (tris: []triangle) =
       let bins_h = (h + bin_size - 1) >> bin_shift
       let bins_w = (w + bin_size - 1) >> bin_shift
-      let (bins_h, bins_w) = assert (bins_h * bins_w - 1 <= i64.u16 u16.highest) (bins_h, bins_w)
+      let bins_w = assert (bins_h * bins_w - 1 <= i64.u16 u16.highest) bins_w
       let f tri_index =
         let tri_bbox = calc_tri_bbox tris[tri_index]
         let bin_bbox =
-          let xmin = (tri_bbox.xmin >> bin_shift) `i64.max` 0
-          let ymin = (tri_bbox.ymin >> bin_shift) `i64.max` 0
-          let xmax = ((tri_bbox.xmax + bin_size - 1) >> bin_shift) `i64.min` bins_w
-          let ymax = ((tri_bbox.ymax + bin_size - 1) >> bin_shift) `i64.min` bins_h
+          let xmin = (tri_bbox.xmin `i64.max` 0) >> bin_shift
+          let ymin = (tri_bbox.ymin `i64.max` 0) >> bin_shift
+          let xmax = ((tri_bbox.xmax `i64.min` w) + bin_size - 1) >> bin_shift
+          let ymax = ((tri_bbox.ymax `i64.min` h) + bin_size - 1) >> bin_shift
           in {xmin, ymin, xmax, ymax}
         in (tri_index, bin_bbox)
       let sz (_, bbox) =
