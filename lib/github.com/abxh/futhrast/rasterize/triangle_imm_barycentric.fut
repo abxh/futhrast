@@ -25,8 +25,26 @@ module type TriangleRasterizerSpec =
       -> ([h][w]target, [h][w]f32)
   }
 
+-- | options for tweaking
+module type ImmBarycentricTriangleRasterizerOptions = {
+  module coarse_mask: bitmask
+  module fine_mask: bitmask
+
+  val bin_shift : i64
+  val fine_shift : i64
+}
+
+-- | default options
+module ImmBarycentricTriangleRasterizerDefaultOptions : ImmBarycentricTriangleRasterizerOptions = {
+  module coarse_mask = bitmask_16
+  module fine_mask = bitmask_64
+
+  def bin_shift : i64 = 5
+  def fine_shift : i64 = 3
+}
+
 -- | immediate-mode barycentric triangle rasterizer with binning
-module ImmBarycentricTriangleRasterizer : TriangleRasterizerSpec = \(V: VaryingSpec) ->
+module ImmBarycentricTriangleRasterizer (O: ImmBarycentricTriangleRasterizerOptions) : TriangleRasterizerSpec = \(V: VaryingSpec) ->
   {
     local module V = VaryingExtensions V
     local module F32 = VaryingExtensions f32
@@ -42,13 +60,9 @@ module ImmBarycentricTriangleRasterizer : TriangleRasterizerSpec = \(V: VaryingS
       , ymax: a
       }
 
-    module coarse_mask = bitmask_16
-    module fine_mask = bitmask_64
+    open O
 
-    local def bin_shift : i64 = 5
-    local def fine_shift : i64 = 3
     local def coarse_shift : i64 = bin_shift - fine_shift
-
     local def bin_size : i64 = 1 << bin_shift
     local def fine_size : i64 = 1 << fine_shift
     local def coarse_size : i64 = 1 << coarse_shift
@@ -301,3 +315,36 @@ module ImmBarycentricTriangleRasterizer : TriangleRasterizerSpec = \(V: VaryingS
       let target_buffer = scatter_2d (copy target_buffer) is target_values
       in (target_buffer, depth_buffer)
   }
+
+-- | triangle rasterizer for testing purposes. can use the REPL for this
+module ImmBarycentricTriangleRasterizerTest = {
+  local
+  module V : VaryingSpec with t = bool = {
+    type t = bool
+    def (+) = (||)
+    def (*) s x = if bool.f32 s then x else false
+  }
+
+  -- note: above do not satisfy all the algrebraic properties required for varying,
+  -- but is defined such for testing purposes
+
+  local module M = ImmBarycentricTriangleRasterizer ImmBarycentricTriangleRasterizerDefaultOptions (V)
+
+  def rasterize_triangle_tiled_test [n] (h: i64) (w: i64) (vs: [n]((f32, f32), (f32, f32), (f32, f32))) : [h][w]i32 =
+    let target_buffer = replicate h (replicate w false)
+    let depth_buffer = replicate h (replicate w (-f32.inf))
+    let frags =
+      vs
+      |> map (\(f0, f1, f2) ->
+                ( {pos = {x = f0.0, y = f0.1}, depth = 1, Z_inv = 1, attr = true}
+                , {pos = {x = f1.0, y = f1.1}, depth = 1, Z_inv = 1, attr = true}
+                , {pos = {x = f2.0, y = f2.1}, depth = 1, Z_inv = 1, attr = true}
+                ))
+    let plot = (\(f: fragment bool) -> f.attr)
+    let depth_select (lhs: f32) (rhs: f32) = if lhs > rhs then lhs else rhs
+    in M.rasterize plot depth_select (false, -f32.inf) (target_buffer, depth_buffer) frags
+       |> (.0)
+       |> map (map i32.bool)
+}
+
+open ImmBarycentricTriangleRasterizerTest

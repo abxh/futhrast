@@ -244,4 +244,4 @@ module CustomRenderSetup (T: TriangleRasterizerSpec) : RenderSetupSpec = \(V: Va
   }
 
 -- | Default renderer setup
-module RenderSetup = CustomRenderSetup TiledTriangleRasterizer 
+module RenderSetup = CustomRenderSetup (TiledTriangleRasterizer TiledTriangleRasterizerDefaultOptions)

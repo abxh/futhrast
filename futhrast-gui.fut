@@ -237,8 +237,8 @@ module lys : lys with text_content = lys_text_content.text_content = {
   }
 
   local module R = CustomRenderSetup ImmScanlineTriangleRasterizer Varying
-  local module RB = CustomRenderSetup ImmBarycentricTriangleRasterizer Varying
-  local module RT = CustomRenderSetup TiledTriangleRasterizer Varying
+  local module RB = CustomRenderSetup (ImmBarycentricTriangleRasterizer ImmBarycentricTriangleRasterizerDefaultOptions) Varying
+  local module RT = CustomRenderSetup (TiledTriangleRasterizer TiledTriangleRasterizerDefaultOptions) Varying
 
   local
   def on_vertex (s: state) (v: (f32, f32, f32)) : vertex_out Varying.t =

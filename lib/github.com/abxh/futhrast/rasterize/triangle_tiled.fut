@@ -27,8 +27,30 @@ module type TriangleRasterizerSpec =
       -> ([h][w]target, [h][w]f32)
   }
 
+module type TiledTriangleRasterizerOptions = {
+  module coarse_mask: bitmask
+  module fine_mask: bitmask
+  module bin_pattern: index_pattern
+
+  val bin_shift : i64
+  val fine_shift : i64
+  val frag_block_shift : i64
+  val num_workgroups_shift : i64
+}
+
+module TiledTriangleRasterizerDefaultOptions : TiledTriangleRasterizerOptions = {
+  module coarse_mask = bitmask_16
+  module fine_mask = bitmask_64
+  module bin_pattern = xshift_offset_pattern
+
+  def bin_shift : i64 = 5
+  def fine_shift : i64 = 3
+  def frag_block_shift : i64 = 8
+  def num_workgroups_shift : i64 = 7
+}
+
 -- | tiled triangle rasterizer with binning
-module TiledTriangleRasterizer : TriangleRasterizerSpec = \(V: VaryingSpec) ->
+module TiledTriangleRasterizer (O: TiledTriangleRasterizerOptions) : TriangleRasterizerSpec = \(V: VaryingSpec) ->
   {
     local module V = VaryingExtensions V
     local module F32 = VaryingExtensions f32
@@ -43,6 +65,8 @@ module TiledTriangleRasterizer : TriangleRasterizerSpec = \(V: VaryingSpec) ->
       , ymin: a
       , ymax: a
       }
+
+    open O
 
     module coarse_mask = bitmask_16
     module fine_mask = bitmask_64
@@ -414,7 +438,7 @@ module TiledTriangleRasterizerTest = {
   -- note: above do not satisfy all the algrebraic properties required for varying,
   -- but is defined such for testing purposes
 
-  local module M = TiledTriangleRasterizer (V)
+  local module M = TiledTriangleRasterizer TiledTriangleRasterizerDefaultOptions (V)
 
   def rasterize_triangle_tiled_test [n] (h: i64) (w: i64) (vs: [n]((f32, f32), (f32, f32), (f32, f32))) : [h][w]i32 =
     let target_buffer = replicate h (replicate w false)

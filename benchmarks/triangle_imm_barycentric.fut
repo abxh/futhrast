@@ -8,6 +8,7 @@
 import "../lib/github.com/abxh/futhrast/types"
 import "../lib/github.com/abxh/futhrast/setup"
 import "../lib/github.com/abxh/futhrast/math/vec"
+import "../lib/github.com/abxh/futhrast/utils/bitmask"
 
 import "../lib/github.com/athas/matte/colour"
 
@@ -18,7 +19,16 @@ module Varying : VaryingSpec with t = argb.colour = {
   def (*) = flip argb.scale
 }
 
-module R = CustomRenderSetup ImmBarycentricTriangleRasterizer Varying
+local
+module O : ImmBarycentricTriangleRasterizerOptions = {
+  module coarse_mask = bitmask_16
+  module fine_mask = bitmask_64
+
+  def bin_shift : i64 = 5
+  def fine_shift : i64 = 3
+}
+
+module R = CustomRenderSetup (ImmBarycentricTriangleRasterizer O) Varying
 
 type state =
   { h: i64

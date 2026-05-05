@@ -67,7 +67,6 @@ def find_ith_set_bit_u64 (b: u64) (i: i64) : i64 =
      then find_ith_set_bit_u32 lower i
      else find_ith_set_bit_u32 upper (i - low_count) + 32
 
-local
 module type bitmask = {
   type t
   val num_bits : i64

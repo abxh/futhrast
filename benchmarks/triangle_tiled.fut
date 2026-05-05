@@ -8,6 +8,8 @@
 import "../lib/github.com/abxh/futhrast/types"
 import "../lib/github.com/abxh/futhrast/setup"
 import "../lib/github.com/abxh/futhrast/math/vec"
+import "../lib/github.com/abxh/futhrast/utils/bitmask"
+import "../lib/github.com/abxh/futhrast/utils/flatten2d"
 
 import "../lib/github.com/athas/matte/colour"
 
@@ -18,7 +20,18 @@ module Varying : VaryingSpec with t = argb.colour = {
   def (*) = flip argb.scale
 }
 
-module R = CustomRenderSetup TiledTriangleRasterizer Varying
+module O : TiledTriangleRasterizerOptions = {
+  module coarse_mask = bitmask_64
+  module fine_mask = bitmask_16
+  module bin_pattern = xshift_offset_pattern
+
+  def bin_shift : i64 = 5
+  def fine_shift : i64 = 2
+  def frag_block_shift : i64 = 8
+  def num_workgroups_shift : i64 = 7
+}
+
+module R = CustomRenderSetup (TiledTriangleRasterizer O) Varying
 
 type state =
   { h: i64
