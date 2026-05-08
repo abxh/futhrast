@@ -151,12 +151,6 @@ module CustomRenderSetup (T: TriangleRasterizerSpec) : RenderSetupSpec = \(V: Va
       let area_check = (xmax - xmin > 1) && (ymax - ymin > 1)
       in area_check
 
-    local
-    def depth_select (c: render_config) lhs rhs : f32 =
-      if c.depth_type == #reversed_z
-      then f32.max lhs rhs
-      else f32.min lhs rhs
-
     def render 'uniform 'vertex 'target [w] [h]
                (c: render_config)
                (u: uniform)
@@ -183,7 +177,7 @@ module CustomRenderSetup (T: TriangleRasterizerSpec) : RenderSetupSpec = \(V: Va
           |> map (\(v0) -> proj v0)
           |> map (\(v0) -> stw v0)
           |> Point.rasterize (on_frag u)
-                             (depth_select c)
+                             c.depth_type
                              (ne_target, ne_depth)
                              (target_buffer, depth_buffer)
         case #lines ->
@@ -193,7 +187,7 @@ module CustomRenderSetup (T: TriangleRasterizerSpec) : RenderSetupSpec = \(V: Va
           |> map (\(v0, v1) -> (stw v0, stw v1))
           |> filter (\tri -> line_bbox_check {w, h} tri)
           |> Line.rasterize (on_frag u)
-                            (depth_select c)
+                            c.depth_type
                             (ne_target, ne_depth)
                             (target_buffer, depth_buffer)
         case #triangles ->
@@ -203,7 +197,7 @@ module CustomRenderSetup (T: TriangleRasterizerSpec) : RenderSetupSpec = \(V: Va
           |> map (\(v0, v1, v2) -> (stw v0, stw v1, stw v2))
           |> filter (\tri -> winding_order_check tri && tri_bbox_area_check tri)
           |> Triangle.rasterize (on_frag u)
-                                (depth_select c)
+                                c.depth_type
                                 (ne_target, ne_depth)
                                 (target_buffer, depth_buffer)
       in {target_buffer, depth_buffer, ne_target, ne_depth}
@@ -236,7 +230,7 @@ module CustomRenderSetup (T: TriangleRasterizerSpec) : RenderSetupSpec = \(V: Va
           |> map (\(v0, v1) -> (stw v0, stw v1))
           |> filter (\tri -> line_bbox_check {w, h} tri)
           |> Line.rasterize (on_frag u)
-                            (depth_select c)
+                            c.depth_type
                             (ne_target, ne_depth)
                             (target_buffer, depth_buffer)
         case _ -> assert false (target_buffer, depth_buffer)

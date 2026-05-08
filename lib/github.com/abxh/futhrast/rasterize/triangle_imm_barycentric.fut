@@ -18,7 +18,7 @@ module type TriangleRasterizerSpec =
     -- the target/depth buffers themselves
     val rasterize 'target [n] [h] [w] :
       (plot: fragment V.t -> target)
-      -> (depth_select: f32 -> f32 -> f32)
+      -> (depth_type: #normal_z | #reversed_z)
       -> (ne: (target, f32))
       -> ([h][w]target, [h][w]f32)
       -> [n](fragment V.t, fragment V.t, fragment V.t)
@@ -173,8 +173,8 @@ module ImmBarycentricTriangleRasterizer (O: ImmBarycentricTriangleRasterizerOpti
       let fine_size = assert (fine_size * fine_size == fine_mask.num_bits) fine_size
       let bins_w = ((w + bin_size - 1) >> bin_shift)
       let f (tile_id, tri_index) =
-        let bin_index = i64.u32 tile_id >> (2 * coarse_shift)
-        let tile_index = i64.u32 tile_id & (coarse_size * coarse_size - 1)
+        let bin_index = i64.u32 (tile_id >> u32.i64 (2 * coarse_shift))
+        let tile_index = i64.u32 (tile_id & u32.i64 (coarse_size * coarse_size - 1))
         let bin_xmin = (bin_index %% bins_w) << bin_shift
         let bin_ymin = (bin_index / bins_w) << bin_shift
         let tile_xmin = ((tile_index & (coarse_size - 1)) << fine_shift) + bin_xmin
@@ -230,7 +230,6 @@ module ImmBarycentricTriangleRasterizer (O: ImmBarycentricTriangleRasterizerOpti
                          ((bin_idxs, tri_idxs): ([n]u16, [n]i64)) =
       let coarse_size = assert (coarse_size * coarse_size == coarse_mask.num_bits) coarse_size
       let coarse_size = assert (coarse_size * coarse_size - 1 <= i64.u8 u8.highest) coarse_size
-      let fb_bbox = {xmin = 0, ymin = 0, xmax = w, ymax = h}
       let bins_w = ((w + bin_size - 1) >> bin_shift)
       let f (bin_index, tri_index) =
         let (f0, f1, f2) = tris[tri_index]
@@ -247,7 +246,8 @@ module ImmBarycentricTriangleRasterizer (O: ImmBarycentricTriangleRasterizerOpti
             let xmax = xmin + fine_size
             let ymax = ymin + fine_size
             in {xmin, ymin, xmax, ymax}
-          in if !bbox_overlaps tile_bbox fb_bbox || !bbox_overlaps tile_bbox tri_bbox
+          in if !bbox_overlaps tile_bbox {xmin = 0, ymin = 0, xmax = w, ymax = h}
+             || !bbox_overlaps tile_bbox tri_bbox
              then false
              else tri_overlaps_bbox tile_bbox wzero wdelta
         let mask = coarse_mask.from_pred_seq f
@@ -295,10 +295,14 @@ module ImmBarycentricTriangleRasterizer (O: ImmBarycentricTriangleRasterizerOpti
 
     def rasterize 'target [h] [w]
                   (plot: (fragment V.t -> target))
-                  (depth_select: f32 -> f32 -> f32)
+                  (depth_type: #normal_z | #reversed_z)
                   ((ne_target, ne_depth): (target, f32))
                   ((target_buffer, depth_buffer): ([h][w]target, [h][w]f32))
                   (tris: [](fragment V.t, fragment V.t, fragment V.t)) : ([h][w]target, [h][w]f32) =
+      let depth_select lhs rhs =
+        if depth_type == #reversed_z
+        then f32.max lhs rhs
+        else f32.min lhs rhs
       let tris = tris |> map ensure_cclockwise_winding_order
       let (is, frag_values, depth_values) =
         bin_rasterize {h, w} tris
@@ -341,8 +345,7 @@ module ImmBarycentricTriangleRasterizerTest = {
                 , {pos = {x = f2.0, y = f2.1}, depth = 1, Z_inv = 1, attr = true}
                 ))
     let plot = (\(f: fragment bool) -> f.attr)
-    let depth_select (lhs: f32) (rhs: f32) = if lhs > rhs then lhs else rhs
-    in M.rasterize plot depth_select (false, -f32.inf) (target_buffer, depth_buffer) frags
+    in M.rasterize plot #reversed_z (false, -f32.inf) (target_buffer, depth_buffer) frags
        |> (.0)
        |> map (map i32.bool)
 }

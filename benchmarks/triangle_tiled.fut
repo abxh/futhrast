@@ -21,14 +21,13 @@ module Varying : VaryingSpec with t = argb.colour = {
 }
 
 module O : TiledTriangleRasterizerOptions = {
-  module coarse_mask = bitmask_16
-  module fine_mask = bitmask_64
-  module bin_pattern = xshift_offset_pattern
+  module coarse_mask = bitmask_64
+  module bin_pattern = morton_u16_pattern
+  module coarse_pattern = morton_u16_pattern
 
-  def bin_shift : i64 = 5
-  def fine_shift : i64 = 3
-  def block_shift : i64 = 8
-  def num_workgroups_shift : i64 = 7
+  def bin_shift : i64 = 7
+  def fine_shift : i64 = 4
+  def num_workgroups_shift : i64 = 9
 }
 
 module R = CustomRenderSetup (TiledTriangleRasterizer O) Varying

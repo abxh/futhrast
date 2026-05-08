@@ -12,7 +12,7 @@ module type LineRasterizerSpec =
     -- the target/depth buffers themselves
     val rasterize 'target [n] [h] [w] :
       (plot: fragment V.t -> target)
-      -> (depth_select: f32 -> f32 -> f32)
+      -> (depth_type: #normal_z | #reversed_z)
       -> (ne: (target, f32))
       -> ([h][w]target, [h][w]f32)
       -> [n](fragment V.t, fragment V.t)
@@ -97,10 +97,14 @@ module LineRasterizer : LineRasterizerSpec = \(V: VaryingSpec) ->
 
     def rasterize 'target [n] [h] [w]
                   (plot: (fragment V.t -> target))
-                  (depth_select: f32 -> f32 -> f32)
+                  (depth_type: #normal_z | #reversed_z)
                   ((ne_target, ne_depth): (target, f32))
                   ((target_buffer, depth_buffer): ([h][w]target, [h][w]f32))
                   (frags: [n](fragment V.t, fragment V.t)) : ([h][w]target, [h][w]f32) =
+      let depth_select lhs rhs =
+        if depth_type == #reversed_z
+        then f32.max lhs rhs
+        else f32.min lhs rhs
       let (is, frag_values, depth_values) =
         frags
         |> map (\l -> (round_fragment l.0, round_fragment l.1))
@@ -143,8 +147,7 @@ module LineRasterizerTest = {
                 , {pos = {x = f1.0, y = f1.1}, depth = 1, Z_inv = 1, attr = true}
                 ))
     let plot = (\(f: fragment bool) -> f.attr)
-    let depth_select (lhs: f32) (rhs: f32) = if lhs > rhs then lhs else rhs
-    in M.rasterize plot depth_select (false, -f32.inf) (target_buffer, depth_buffer) frags
+    in M.rasterize plot #reversed_z (false, -f32.inf) (target_buffer, depth_buffer) frags
        |> (.0)
        |> map (map i32.bool)
 }

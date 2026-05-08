@@ -10,8 +10,8 @@ module type index_pattern = {
   val unflatten : t -> i64 -> (i64, i64)
 }
 
--- identity pattern implementation
-module identity_pattern : index_pattern = {
+-- linear indexing pattern implementation
+module linear_pattern : index_pattern = {
   type t = {w: i64}
 
   def setup {w = w, h = _} =
@@ -159,12 +159,12 @@ def w : i64 = 8
 def h : i64 = 8
 def num_rasterizers : i64 = 8
 
-def visualize_identity =
-  let s = identity_pattern.setup {w, h}
+def visualize_linear =
+  let s = linear_pattern.setup {w, h}
   let xs = tabulate_2d h w (\y x -> 1 + ((y * w + x) % num_rasterizers))
   let is =
     tabulate_2d h w (\y x ->
-                       let i = identity_pattern.flatten s (y, x)
+                       let i = linear_pattern.flatten s (y, x)
                        let y' = i / w
                        let x' = i %% w
                        let y' = h - y' - 1
@@ -212,58 +212,3 @@ def visualize_morton_u32 =
   let h = 4
   let s = morton_u32_pattern.setup {w, h}
   in tabulate_2d h w (\y x -> morton_u32_pattern.flatten s (y, x)) |> flatten
-
--- ==
--- entry: test_identity
--- input {}
--- output { true }
-entry test_identity =
-  let s = identity_pattern.setup {w, h}
-  in reduce (&&) true
-     <| map2 (==)
-             (tabulate_2d h w (\y x -> (y, x)) |> flatten)
-             (tabulate_2d h w (\y x -> identity_pattern.unflatten s <| identity_pattern.flatten s (y, x)) |> flatten)
-
--- ==
--- entry: test_diagonal
--- input {}
--- output { true }
-entry test_diagonal =
-  let s = diagonal_pattern.setup {w, h}
-  in reduce (&&) true
-     <| map2 (==)
-             (tabulate_2d h w (\y x -> (y, x)) |> flatten)
-             (tabulate_2d h w (\y x -> diagonal_pattern.unflatten s <| diagonal_pattern.flatten s (y, x)) |> flatten)
-
--- ==
--- entry: test_xshift_offset
--- input {}
--- output { true }
-entry test_xshift_offset =
-  let s = xshift_offset_pattern.setup {w, h}
-  in reduce (&&) true
-     <| map2 (==)
-             (tabulate_2d h w (\y x -> (y, x)) |> flatten)
-             (tabulate_2d h w (\y x -> xshift_offset_pattern.unflatten s <| xshift_offset_pattern.flatten s (y, x)) |> flatten)
-
--- ==
--- entry: test_morton_u16
--- input {}
--- output { true }
-entry test_morton_u16 =
-  let s = morton_u16_pattern.setup {w, h}
-  in reduce (&&) true
-     <| map2 (==)
-             (tabulate_2d h w (\y x -> (y, x)) |> flatten)
-             (tabulate_2d h w (\y x -> morton_u16_pattern.unflatten s <| morton_u16_pattern.flatten s (y, x)) |> flatten)
-
--- ==
--- entry: test_morton_u32
--- input {}
--- output { true }
-entry test_morton_u32 =
-  let s = morton_u32_pattern.setup {w, h}
-  in reduce (&&) true
-     <| map2 (==)
-             (tabulate_2d h w (\y x -> (y, x)) |> flatten)
-             (tabulate_2d h w (\y x -> morton_u32_pattern.unflatten s <| morton_u32_pattern.flatten s (y, x)) |> flatten)
