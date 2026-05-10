@@ -9,7 +9,7 @@ import "../math/vec"
 module type TriangleRasterizerSpec =
   (V: VaryingSpec)
   -> {
-    -- | rasterize triangle given plot function, depth selection function,
+    -- | rasterize triangle given plot function, depth type,
     -- triangle fragments, a neutral value for the target/depth buffers and
     -- the target/depth buffers themselves
     val rasterize 'target [n] [h] [w] :

@@ -26,7 +26,7 @@ run_$(1):
 	rm -f $(1).c $(1) $(1).fut.tuning
 endef
 
-run: run_point run_line run_triangle_imm_scanline run_triangle_imm_barycentric triangle_tiled
+run: run_point run_line run_triangle_imm_scanline run_triangle_imm_barycentric run_triangle_tiled run_triangle_hybrid
 
 run_point: $(eval $(call RUN_TEMPLATE,point))
 
@@ -38,9 +38,11 @@ run_triangle_imm_barycentric: $(eval $(call RUN_TEMPLATE,triangle_imm_barycentri
 
 run_triangle_tiled: $(eval $(call RUN_TEMPLATE,triangle_tiled))
 
+run_triangle_hybrid: $(eval $(call RUN_TEMPLATE,triangle_hybrid))
+
 clean:
 	rm -f extract_obj_data *.in
-	rm -f *.c point line triangle_imm_scanline triangle_imm_barycentric triangle_tiled
+	rm -f *.c point line triangle_imm_scanline triangle_imm_barycentric triangle_tiled triangle_hybrid
 	rm -f *.fut.tuning
 	rm -f *.json
 	rm -rf *.prof

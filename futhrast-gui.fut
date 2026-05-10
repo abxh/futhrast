@@ -29,18 +29,15 @@ type~ lys_state =
                   | #penger
                   | #dragon
   , render_kind: #points | #lines | #triangles
-  , triangle_rasterizer_mode: #immediate_scanline | #immediate_barycentric | #tiled_barycentric
   , inner_mode: #yes | #no
   }
 
 module lys_text_content = {
-  type text_content = (i64, i64, i64)
+  type text_content = (i64, i64)
 
   def text_format () =
     "FPS: %ld\n"
     ++ "number of triangles: %ld\n"
-    ++ "triangle rasterizer mode: %[immediate (scanline)|immediate (barycentric)|tiled (barycentric)]\n"
-    ++ "t: switch rasterizer mode\n"
     ++ "\n"
     ++ "b: bunny\n"
     ++ "m: monkey\n"
@@ -63,12 +60,7 @@ module lys_text_content = {
       case #head -> length s.inds_head / 3
       case #penger -> length s.inds_penger / 3
       case #dragon -> length s.inds_dragon / 3
-    let tr_mode =
-      match s.triangle_rasterizer_mode
-      case #immediate_scanline -> 0
-      case #immediate_barycentric -> 1
-      case #tiled_barycentric -> 2
-    in (i64.f32 render_duration, num_triangles, tr_mode)
+    in (i64.f32 render_duration, num_triangles)
 
   def text_colour = const argb.white
 }
@@ -129,7 +121,7 @@ module lys : lys with text_content = lys_text_content.text_content = {
   def init (_: u32) (h: i64) (w: i64) : state =
     { w
     , h
-    , zoom = 1
+    , zoom = 1.6
     , zmin = 0
     , zmax = 0
     , pos = (0, 0, 0)
@@ -146,9 +138,8 @@ module lys : lys with text_content = lys_text_content.text_content = {
     , verts_head = replicate 0 (0, 0, 0)
     , verts_penger = replicate 0 (0, 0, 0)
     , verts_dragon = replicate 0 (0, 0, 0)
-    , render_model = #bunny
+    , render_model = #dragon
     , render_kind = #triangles
-    , triangle_rasterizer_mode = #immediate_barycentric
     , inner_mode = #no
     }
 
@@ -172,11 +163,6 @@ module lys : lys with text_content = lys_text_content.text_content = {
     then s with render_model = #penger
     else if key == SDLK_r
     then s with render_model = #dragon
-    else if key == SDLK_t
-    then s with triangle_rasterizer_mode = match s.triangle_rasterizer_mode
-           case #immediate_scanline -> #immediate_barycentric
-           case #immediate_barycentric -> #tiled_barycentric
-           case #tiled_barycentric -> #immediate_scanline
     else if key == SDLK_i
     then s with inner_mode = match s.inner_mode
            case #no -> #yes
@@ -236,9 +222,7 @@ module lys : lys with text_content = lys_text_content.text_content = {
     def (*) = flip argb.scale
   }
 
-  local module R = CustomRenderSetup ImmScanlineTriangleRasterizer Varying
-  local module RB = CustomRenderSetup (ImmBarycentricTriangleRasterizer ImmBarycentricTriangleRasterizerDefaultOptions) Varying
-  local module RT = CustomRenderSetup (TiledTriangleRasterizer TiledTriangleRasterizerDefaultOptions) Varying
+  local module R = RenderSetup Varying
 
   local
   def on_vertex (s: state) (v: (f32, f32, f32)) : vertex_out Varying.t =
@@ -311,38 +295,14 @@ module lys : lys with text_content = lys_text_content.text_content = {
                                on_fragment
          |> (.target_buffer)
        case #triangles ->
-         match s.triangle_rasterizer_mode
-         case #immediate_scanline ->
-           init_framebuffer {w = s.w, h = s.h} (argb.gray 0.4, ne_depth)
-           |> R.render render_config
-                       s
-                       { primitive_type = #triangles
-                       , vertices = verts
-                       , indices = inds
-                       }
-                       on_vertex
-                       on_fragment
-           |> (.target_buffer)
-         case #immediate_barycentric ->
-           init_framebuffer {w = s.w, h = s.h} (argb.gray 0.3, ne_depth)
-           |> RB.render render_config
-                        s
-                        { primitive_type = #triangles
-                        , vertices = verts
-                        , indices = inds
-                        }
-                        on_vertex
-                        on_fragment
-           |> (.target_buffer)
-         case #tiled_barycentric ->
-           init_framebuffer {w = s.w, h = s.h} (argb.gray 0.2, ne_depth)
-           |> RT.render render_config
-                        s
-                        { primitive_type = #triangles
-                        , vertices = verts
-                        , indices = inds
-                        }
-                        on_vertex
-                        on_fragment
-           |> (.target_buffer)
+         init_framebuffer {w = s.w, h = s.h} (argb.gray 0.2, ne_depth)
+         |> R.render render_config
+                     s
+                     { primitive_type = #triangles
+                     , vertices = verts
+                     , indices = inds
+                     }
+                     on_vertex
+                     on_fragment
+         |> (.target_buffer)
 }

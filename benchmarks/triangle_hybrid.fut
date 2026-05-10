@@ -20,17 +20,19 @@ module Varying : VaryingSpec with t = argb.colour = {
   def (*) = flip argb.scale
 }
 
-module O : TiledTriangleRasterizerOptions = {
+module O : HybridTriangleRasterizerOptions = {
   module coarse_mask = bitmask_64
+  module small_triangle_mask = bitmask_64
   module bin_pattern = morton_u16_pattern
   module coarse_pattern = morton_u16_pattern
 
   def bin_shift : i64 = 7
   def fine_shift : i64 = 4
   def num_intrablocks_shift : i64 = 8
+  def small_triangle_size_shift : i64 = 6
 }
 
-module R = CustomRenderSetup (TiledTriangleRasterizer O) Varying
+module R = CustomRenderSetup (HybridTriangleRasterizer O) Varying
 
 type state =
   { h: i64

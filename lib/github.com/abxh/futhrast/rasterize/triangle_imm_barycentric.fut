@@ -13,7 +13,7 @@ import "../math/fixedpoint"
 module type TriangleRasterizerSpec =
   (V: VaryingSpec)
   -> {
-    -- | rasterize triangle given plot function, depth selection function,
+    -- | rasterize triangle given plot function, depth type,
     -- triangle fragments, a neutral value for the target/depth buffers and
     -- the target/depth buffers themselves
     val rasterize 'target [n] [h] [w] :
@@ -29,18 +29,22 @@ module type TriangleRasterizerSpec =
 module type ImmBarycentricTriangleRasterizerOptions = {
   module coarse_mask: bitmask
   module fine_mask: bitmask
+  module small_triangle_mask: bitmask
 
   val bin_shift : i64
   val fine_shift : i64
+  val small_triangle_size_shift : i64
 }
 
 -- | default options
 module ImmBarycentricTriangleRasterizerDefaultOptions : ImmBarycentricTriangleRasterizerOptions = {
   module coarse_mask = bitmask_16
   module fine_mask = bitmask_64
+  module small_triangle_mask = bitmask_128
 
   def bin_shift : i64 = 5
   def fine_shift : i64 = 3
+  def small_triangle_size_shift : i64 = 7
 }
 
 -- | immediate-mode barycentric triangle rasterizer with binning
@@ -66,6 +70,7 @@ module ImmBarycentricTriangleRasterizer (O: ImmBarycentricTriangleRasterizerOpti
     local def bin_size : i64 = 1 << bin_shift
     local def fine_size : i64 = 1 << fine_shift
     local def coarse_size : i64 = 1 << coarse_shift
+    local def small_triangle_size : i64 = 1 << small_triangle_size_shift
 
     def barycentric = F32.barycentric
     def barycentric_pc = F32.barycentric_perspective_corrected_w_Z_inv_t
@@ -263,17 +268,30 @@ module ImmBarycentricTriangleRasterizer (O: ImmBarycentricTriangleRasterizerOpti
          |> expand sz get
          |> unzip
 
-    def bin_rasterize {h = h: i64, w = w: i64} (tris: []triangle) =
+    def bin_rasterize [n]
+                      {h = h: i64, w = w: i64}
+                      (tris: [n]triangle) =
       let bins_h = (h + bin_size - 1) >> bin_shift
       let bins_w = (w + bin_size - 1) >> bin_shift
       let bins_w = assert (bins_h * bins_w - 1 <= i64.u16 u16.highest) bins_w
+      let small_triangle_size =
+        assert (small_triangle_size == small_triangle_mask.num_bits)
+        small_triangle_size
       let f tri_index =
         let tri_bbox = calc_tri_bbox tris[tri_index]
+        let tri_bbox' =
+          let xmin = (tri_bbox.xmin `i64.max` 0)
+          let ymin = (tri_bbox.ymin `i64.max` 0)
+          let xmax = (tri_bbox.xmax `i64.min` w)
+          let ymax = (tri_bbox.ymax `i64.min` h)
+          in {xmin, ymin, xmax, ymax}
+        in (tri_index, tri_bbox')
+      let g (tri_index, tri_bbox) =
         let bin_bbox =
-          let xmin = (tri_bbox.xmin `i64.max` 0) >> bin_shift
-          let ymin = (tri_bbox.ymin `i64.max` 0) >> bin_shift
-          let xmax = ((tri_bbox.xmax `i64.min` w) + bin_size - 1) >> bin_shift
-          let ymax = ((tri_bbox.ymax `i64.min` h) + bin_size - 1) >> bin_shift
+          let xmin = tri_bbox.xmin >> bin_shift
+          let ymin = tri_bbox.ymin >> bin_shift
+          let xmax = (tri_bbox.xmax + bin_size - 1) >> bin_shift
+          let ymax = (tri_bbox.ymax + bin_size - 1) >> bin_shift
           in {xmin, ymin, xmax, ymax}
         in (tri_index, bin_bbox)
       let sz (_, bbox) =
@@ -286,29 +304,87 @@ module ImmBarycentricTriangleRasterizer (O: ImmBarycentricTriangleRasterizerOpti
         let dx = bbox_index %% bbox_w
         let x = bbox.xmin + dx
         let y = bbox.ymin + dy
-        let bin_index = y * bins_w + x
-        in (u16.i64 bin_index, tri_index)
-      in indices tris
-         |> map f
-         |> expand sz get
-         |> unzip
+        in (u16.i64 <| y * bins_w + x, tri_index)
+      let (small_partition, other_partition) =
+        indices tris
+        |> map f
+        |> partition (\(_, bbox) ->
+                        let bbox_h = bbox.ymax - bbox.ymin
+                        let bbox_w = bbox.xmax - bbox.xmin
+                        in (bbox_h `i64.max` 0) * (bbox_w `i64.max` 0) <= small_triangle_size)
+      in ( small_partition
+         , other_partition
+           |> map g
+           |> expand sz get
+           |> unzip
+         )
 
-    def rasterize 'target [h] [w]
-                  (plot: (fragment V.t -> target))
-                  (depth_type: #normal_z | #reversed_z)
-                  ((ne_target, ne_depth): (target, f32))
-                  ((target_buffer, depth_buffer): ([h][w]target, [h][w]f32))
-                  (tris: [](fragment V.t, fragment V.t, fragment V.t)) : ([h][w]target, [h][w]f32) =
-      let depth_select lhs rhs =
-        if depth_type == #reversed_z
-        then f32.max lhs rhs
-        else f32.min lhs rhs
-      let tris = tris |> map ensure_cclockwise_winding_order
+    def rasterize_small_triangles 'target [h] [w]
+                                  (plot: (fragment V.t -> target))
+                                  (depth_select: f32 -> f32 -> f32)
+                                  ((ne_target, ne_depth): (target, f32))
+                                  ((target_buffer, depth_buffer): (*[h][w]target, *[h][w]f32))
+                                  (tris: []triangle)
+                                  (pairings: [](i64, bbox i64)) =
+      let f (tri_index, bbox: bbox i64) =
+        let bbox_h = bbox.ymax - bbox.ymin
+        let bbox_w = bbox.xmax - bbox.xmin
+        let bbox_size = (bbox_h `i64.max` 0) * (bbox_w `i64.max` 0)
+        let (f0, f1, f2) = tris[tri_index]
+        let verts = (f0.pos, f1.pos, f2.pos)
+        let inv_area_2 = 1 / calc_signed_tri_area_2 verts
+        let verts_fp =
+          ( vec2f.map fixedpoint.f32 f0.pos
+          , vec2f.map fixedpoint.f32 f1.pos
+          , vec2f.map fixedpoint.f32 f2.pos
+          )
+        let wzero =
+          calc_wcoeffs_fp verts_fp { x = fixedpoint.i64 bbox.xmin
+                                   , y = fixedpoint.i64 bbox.ymin
+                                   }
+        let wdelta = calc_wdelta_fp verts_fp
+        let wbias = calc_tri_edge_bias verts_fp
+        let g bbox_index =
+          let bbox_x = bbox_index %% bbox_w
+          let bbox_y = bbox_index / bbox_w
+          let x = (fixedpoint.f32 0.5) fixedpoint.+ fixedpoint.i64 bbox_x
+          let y = (fixedpoint.f32 0.5) fixedpoint.+ fixedpoint.i64 bbox_y
+          let w = wzero vec3fp.+ wbias vec3fp.+ (x vec3fp.* wdelta.x) vec3fp.+ (y vec3fp.* wdelta.y)
+          in w.x fixedpoint.>= (fixedpoint.i64 0)
+             && w.y fixedpoint.>= (fixedpoint.i64 0)
+             && w.z fixedpoint.>= (fixedpoint.i64 0)
+        let mask =
+          loop b = small_triangle_mask.empty
+          for pos in 0..<bbox_size do
+            small_triangle_mask.set b pos (g pos)
+        in (bbox, {tri_index, wzero, wdelta, inv_area_2}, mask)
+      let sz ((_, _, mask)) = small_triangle_mask.size mask
+      let get ((bbox, {tri_index, wzero, wdelta, inv_area_2}, mask)) set_bbox_index =
+        let bbox_w = bbox.xmax - bbox.xmin
+        let bbox_index = small_triangle_mask.find_ith_set_bit mask set_bbox_index
+        let bbox_x = bbox_index %% bbox_w
+        let bbox_y = bbox_index / bbox_w
+        let x = bbox_x + bbox.xmin
+        let y = bbox_y + bbox.ymin
+        let pos = {x = 0.5 + f32.i64 x, y = 0.5 + f32.i64 y}
+        let w =
+          wzero
+          vec3fp.+ (((fixedpoint.f32 0.5) fixedpoint.+ fixedpoint.i64 bbox_x) vec3fp.* wdelta.x)
+          vec3fp.+ (((fixedpoint.f32 0.5) fixedpoint.+ fixedpoint.i64 bbox_y) vec3fp.* wdelta.y)
+          |> vec3fp.map fixedpoint.to_f32
+          |> (inv_area_2 vec3f.*)
+          |> vec3f.to_tuple
+        let (f0, f1, f2) = tris[tri_index]
+        let Z_inv = barycentric f0.Z_inv f1.Z_inv f2.Z_inv w
+        let depth = barycentric_pc Z_inv (f0.depth, f0.Z_inv) (f1.depth, f1.Z_inv) (f2.depth, f2.Z_inv) w
+        let attr = barycentric_pc_attr Z_inv (f0.attr, f0.Z_inv) (f1.attr, f1.Z_inv) (f2.attr, f2.Z_inv) w
+        in ((y, x), {pos, Z_inv, depth, attr}, depth)
       let (is, frag_values, depth_values) =
-        bin_rasterize {h, w} tris
-        |> coarse_rasterize {h, w} tris
-        |> fine_rasterize {h, w} tris
-      let depth_buffer = reduce_by_index_2d (copy depth_buffer) depth_select ne_depth is depth_values
+        pairings
+        |> map f
+        |> expand sz get
+        |> unzip3
+      let depth_buffer = reduce_by_index_2d depth_buffer depth_select ne_depth is depth_values
       let (is, target_values) =
         zip is frag_values
         |> map (\((y, x), f) ->
@@ -316,7 +392,42 @@ module ImmBarycentricTriangleRasterizer (O: ImmBarycentricTriangleRasterizerOpti
                   then ((y, x), plot f)
                   else ((-1, -1), ne_target))
         |> unzip2
-      let target_buffer = scatter_2d (copy target_buffer) is target_values
+      let target_buffer = scatter_2d target_buffer is target_values
+      in (target_buffer, depth_buffer)
+
+    def rasterize 'target [h] [w]
+                  (plot: (fragment V.t -> target))
+                  (depth_type: #normal_z | #reversed_z)
+                  ((ne_target, ne_depth): (target, f32))
+                  ((target_buffer, depth_buffer): ([h][w]target, [h][w]f32))
+                  (tris: [](fragment V.t, fragment V.t, fragment V.t)) : ([h][w]target, [h][w]f32) =
+      let (target_buffer, depth_buffer) = (copy target_buffer, copy depth_buffer)
+      let depth_select lhs rhs =
+        if depth_type == #reversed_z
+        then f32.max lhs rhs
+        else f32.min lhs rhs
+      let tris = tris |> map ensure_cclockwise_winding_order
+      let (small_partition, other_partition) = bin_rasterize {h, w} tris
+      let (target_buffer, depth_buffer) =
+        rasterize_small_triangles plot
+                                  depth_select
+                                  ((ne_target, ne_depth))
+                                  (target_buffer, depth_buffer)
+                                  tris
+                                  small_partition
+      let (is, frag_values, depth_values) =
+        other_partition
+        |> coarse_rasterize {h, w} tris
+        |> fine_rasterize {h, w} tris
+      let depth_buffer = reduce_by_index_2d depth_buffer depth_select ne_depth is depth_values
+      let (is, target_values) =
+        zip is frag_values
+        |> map (\((y, x), f) ->
+                  if (0 <= x && x < w) && (0 <= y && y < h) && depth_buffer[y, x] == f.depth
+                  then ((y, x), plot f)
+                  else ((-1, -1), ne_target))
+        |> unzip2
+      let target_buffer = scatter_2d target_buffer is target_values
       in (target_buffer, depth_buffer)
   }
 

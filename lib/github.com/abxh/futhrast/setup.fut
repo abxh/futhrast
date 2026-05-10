@@ -15,6 +15,7 @@ open import "rasterize/line"
 open import "rasterize/triangle_imm_scanline"
 open import "rasterize/triangle_imm_barycentric"
 open import "rasterize/triangle_tiled"
+open import "rasterize/triangle_hybrid"
 
 -- | renderer configuration options
 type render_config =
@@ -238,4 +239,4 @@ module CustomRenderSetup (T: TriangleRasterizerSpec) : RenderSetupSpec = \(V: Va
   }
 
 -- | Default renderer setup
-module RenderSetup = CustomRenderSetup (TiledTriangleRasterizer TiledTriangleRasterizerDefaultOptions)
+module RenderSetup = CustomRenderSetup (HybridTriangleRasterizer HybridTriangleRasterizerDefaultOptions)
