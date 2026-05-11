@@ -4,14 +4,16 @@
 -- compiled input @ african_head.in
 -- compiled input @ penger.in
 -- compiled input @ dragon.in
+-- compiled input @ lucy.in
+-- compiled input @ armadillo.in
 
 -- > :img main ($loaddata "bunny.in")
 
-import "../lib/github.com/abxh/futhrast/types"
-import "../lib/github.com/abxh/futhrast/setup"
-import "../lib/github.com/abxh/futhrast/math/vec"
+import "../../lib/github.com/abxh/futhrast/types"
+import "../../lib/github.com/abxh/futhrast/setup"
+import "../../lib/github.com/abxh/futhrast/math/vec"
 
-import "../lib/github.com/athas/matte/colour"
+import "../../lib/github.com/athas/matte/colour"
 
 local
 module Varying : VaryingSpec with t = argb.colour = {

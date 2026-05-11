@@ -13,21 +13,27 @@ type~ lys_state =
   , angle_delta: f32
   , zmax: f32
   , zmin: f32
+  , verts_armadillo: [](f32, f32, f32)
   , verts_bunny: [](f32, f32, f32)
   , verts_monkey: [](f32, f32, f32)
   , verts_head: [](f32, f32, f32)
   , verts_penger: [](f32, f32, f32)
   , verts_dragon: [](f32, f32, f32)
+  , verts_lucy: [](f32, f32, f32)
   , inds_bunny: []i64
   , inds_monkey: []i64
   , inds_head: []i64
   , inds_penger: []i64
   , inds_dragon: []i64
+  , inds_lucy: []i64
+  , inds_armadillo: []i64
   , render_model:   #bunny
                   | #monkey
                   | #head
                   | #penger
                   | #dragon
+                  | #lucy
+                  | #armadillo
   , render_kind: #points | #lines | #triangles
   , inner_mode: #yes | #no
   }
@@ -44,6 +50,8 @@ module lys_text_content = {
     ++ "h: african head\n"
     ++ "p: penger\n"
     ++ "r: dragon\n"
+    ++ "l: lucy\n"
+    ++ "o: armadillo\n"
     ++ "\n"
     ++ "0: snap into position\n"
     ++ "1|2|3: point|line|triangle\n"
@@ -60,6 +68,8 @@ module lys_text_content = {
       case #head -> length s.inds_head / 3
       case #penger -> length s.inds_penger / 3
       case #dragon -> length s.inds_dragon / 3
+      case #lucy -> length s.inds_lucy / 3
+      case #armadillo -> length s.inds_armadillo / 3
     in (i64.f32 render_duration, num_triangles)
 
   def text_colour = const argb.white
@@ -73,6 +83,8 @@ module lys_file = {
     ++ "african_head.obj,"
     ++ "penger.obj,"
     ++ "dragon.obj,"
+    ++ "lucy.obj,"
+    ++ "armadillo.obj,"
 
   def load_bin _ _ s = s
 
@@ -88,6 +100,10 @@ module lys_file = {
       s with inds_penger = is
     case 4 ->
       s with inds_dragon = is
+    case 5 ->
+      s with inds_lucy = is
+    case 6 ->
+      s with inds_armadillo = is
     case _ ->
       s
 
@@ -103,6 +119,10 @@ module lys_file = {
       s with verts_penger = vs
     case 4 ->
       s with verts_dragon = vs
+    case 5 ->
+      s with verts_lucy = vs
+    case 6 ->
+      s with verts_armadillo = vs
     case _ ->
       s
 
@@ -121,7 +141,7 @@ module lys : lys with text_content = lys_text_content.text_content = {
   def init (_: u32) (h: i64) (w: i64) : state =
     { w
     , h
-    , zoom = 1.6
+    , zoom = 1
     , zmin = 0
     , zmax = 0
     , pos = (0, 0, 0)
@@ -133,11 +153,15 @@ module lys : lys with text_content = lys_text_content.text_content = {
     , inds_head = replicate 0 (-1)
     , inds_penger = replicate 0 (-1)
     , inds_dragon = replicate 0 (-1)
+    , inds_lucy = replicate 0 (-1)
+    , inds_armadillo = replicate 0 (-1)
     , verts_bunny = replicate 0 (0, 0, 0)
     , verts_monkey = replicate 0 (0, 0, 0)
     , verts_head = replicate 0 (0, 0, 0)
     , verts_penger = replicate 0 (0, 0, 0)
     , verts_dragon = replicate 0 (0, 0, 0)
+    , verts_lucy = replicate 0 (0, 0, 0)
+    , verts_armadillo = replicate 0 (0, 0, 0)
     , render_model = #dragon
     , render_kind = #triangles
     , inner_mode = #no
@@ -163,6 +187,10 @@ module lys : lys with text_content = lys_text_content.text_content = {
     then s with render_model = #penger
     else if key == SDLK_r
     then s with render_model = #dragon
+    else if key == SDLK_l
+    then s with render_model = #lucy
+    else if key == SDLK_o
+    then s with render_model = #armadillo
     else if key == SDLK_i
     then s with inner_mode = match s.inner_mode
            case #no -> #yes
@@ -268,6 +296,8 @@ module lys : lys with text_content = lys_text_content.text_content = {
       case #head -> (s.verts_head, s.inds_head)
       case #penger -> (s.verts_penger, s.inds_penger)
       case #dragon -> (s.verts_dragon, s.inds_dragon)
+      case #lucy -> (s.verts_lucy, s.inds_lucy)
+      case #armadillo -> (s.verts_armadillo, s.inds_armadillo)
     let s =
       s with zmin = reduce f32.min f32.highest (map (.2) verts)
         with zmax = reduce f32.max f32.lowest (map (.2) verts) + 1

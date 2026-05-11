@@ -13,6 +13,8 @@ build:
 	./extract_obj_data ../../monkey.obj
 	./extract_obj_data ../../penger.obj
 	./extract_obj_data ../../dragon.obj
+	./extract_obj_data ../../lucy.obj
+	./extract_obj_data ../../armadillo.obj
 	rm -f extract_obj_data
 
 define RUN_TEMPLATE
