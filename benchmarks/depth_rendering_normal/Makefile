@@ -5,14 +5,14 @@ all: build run
 
 build:
 	g++ -std=c++20 \
-		../lib/github.com/abxh/lys/utils/tiny_obj_loader/tiny_obj_loader.cpp \
+		../../lib/github.com/abxh/lys/utils/tiny_obj_loader/tiny_obj_loader.cpp \
 		extract_obj_data.cpp \
 		-o extract_obj_data
-	./extract_obj_data ../bunny.obj
-	./extract_obj_data ../african_head.obj
-	./extract_obj_data ../monkey.obj
-	./extract_obj_data ../penger.obj
-	./extract_obj_data ../dragon.obj
+	./extract_obj_data ../../bunny.obj
+	./extract_obj_data ../../african_head.obj
+	./extract_obj_data ../../monkey.obj
+	./extract_obj_data ../../penger.obj
+	./extract_obj_data ../../dragon.obj
 	rm -f extract_obj_data
 
 define RUN_TEMPLATE
