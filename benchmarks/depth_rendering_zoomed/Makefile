@@ -8,13 +8,13 @@ build:
 		../tiny_obj_loader/tiny_obj_loader.cpp \
 		extract_obj_data.cpp \
 		-o extract_obj_data
-	./extract_obj_data ../../bunny.obj
-	./extract_obj_data ../../african_head.obj
-	./extract_obj_data ../../monkey.obj
-	./extract_obj_data ../../penger.obj
-	./extract_obj_data ../../dragon.obj
-	./extract_obj_data ../../lucy.obj
-	./extract_obj_data ../../armadillo.obj
+	./extract_obj_data ../../models/bunny.obj
+	./extract_obj_data ../../models/african_head.obj
+	./extract_obj_data ../../models/monkey.obj
+	./extract_obj_data ../../models/penger.obj
+	./extract_obj_data ../../models/dragon.obj
+	./extract_obj_data ../../models/lucy.obj
+	./extract_obj_data ../../models/armadillo.obj
 	rm -f extract_obj_data
 
 define RUN_TEMPLATE

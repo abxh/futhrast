@@ -83,13 +83,13 @@ module lys_text_content = {
 module lys_file = {
   def input_file_names () =
     ""
-    ++ "../../bunny.obj,"
-    ++ "../../monkey.obj,"
-    ++ "../../african_head.obj,"
-    ++ "../../penger.obj,"
-    ++ "../../dragon.obj,"
-    ++ "../../lucy.obj,"
-    ++ "../../armadillo.obj,"
+    ++ "../../models/bunny.obj,"
+    ++ "../../models/monkey.obj,"
+    ++ "../../models/african_head.obj,"
+    ++ "../../models/penger.obj,"
+    ++ "../../models/dragon.obj,"
+    ++ "../../models/lucy.obj,"
+    ++ "../../models/armadillo.obj,"
 
   def load_bin _ _ s = s
 
