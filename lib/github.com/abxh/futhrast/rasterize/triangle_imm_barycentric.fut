@@ -205,6 +205,11 @@ module ImmBarycentricTriangleRasterizer (O: ImmBarycentricTriangleRasterizerOpti
              && w.y fixedpoint.>= (fixedpoint.i64 0)
              && w.z fixedpoint.>= (fixedpoint.i64 0)
         let mask = fine_mask.from_pred_seq g
+        let wzero = {x = wzero.x, y = wzero.y}
+        let wdelta =
+          { x = {x = wdelta.x.x, y = wdelta.x.y}
+          , y = {x = wdelta.y.x, y = wdelta.y.y}
+          }
         in ({tile_xmin, tile_ymin}, {tri_index, wzero, wdelta, inv_area_2}, mask)
       let sz ((_, _, mask)) = fine_mask.size mask
       let get (({tile_xmin, tile_ymin}, {tri_index, wzero, wdelta, inv_area_2}, mask)) set_pixel_index =
@@ -214,13 +219,14 @@ module ImmBarycentricTriangleRasterizer (O: ImmBarycentricTriangleRasterizerOpti
         let x = pixel_x + tile_xmin
         let y = pixel_y + tile_ymin
         let pos = {x = 0.5 + f32.i64 x, y = 0.5 + f32.i64 y}
-        let w =
+        let (w0, w1) =
           wzero
-          vec3fp.+ (((fixedpoint.f32 0.5) fixedpoint.+ fixedpoint.i64 pixel_x) vec3fp.* wdelta.x)
-          vec3fp.+ (((fixedpoint.f32 0.5) fixedpoint.+ fixedpoint.i64 pixel_y) vec3fp.* wdelta.y)
-          |> vec3fp.map fixedpoint.to_f32
-          |> (inv_area_2 vec3f.*)
-          |> vec3f.to_tuple
+          vec2fp.+ (((fixedpoint.f32 0.5) fixedpoint.+ fixedpoint.i64 pixel_x) vec2fp.* wdelta.x)
+          vec2fp.+ (((fixedpoint.f32 0.5) fixedpoint.+ fixedpoint.i64 pixel_y) vec2fp.* wdelta.y)
+          |> vec2fp.map fixedpoint.to_f32
+          |> (inv_area_2 vec2f.*)
+          |> vec2f.to_tuple
+        let w = (w0, w1, 1 - w0 - w1)
         let (f0, f1, f2) = tris[tri_index]
         let Z_inv = barycentric f0.Z_inv f1.Z_inv f2.Z_inv w
         let depth = barycentric_pc Z_inv (f0.depth, f0.Z_inv) (f1.depth, f1.Z_inv) (f2.depth, f2.Z_inv) w

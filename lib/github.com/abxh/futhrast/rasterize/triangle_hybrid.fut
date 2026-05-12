@@ -315,13 +315,17 @@ module HybridTriangleRasterizer (O: HybridTriangleRasterizerOptions) : TriangleR
         let y = bbox_y + bbox.ymin
         let {tri = (f0, f1, f2), wzero, wdelta, wbias = _, inv_area_2} = tri_infos[i64.u32 tri_index]
         let (f0, f1, f2): triangle = (f0, f1, f2)
-        let w =
+        let wzero = {x = wzero.x, y = wzero.y}
+        let wdelta_x = {x = wdelta.x.x, y = wdelta.x.y}
+        let wdelta_y = {x = wdelta.y.x, y = wdelta.y.y}
+        let (w0, w1) =
           wzero
-          vec3fp.+ (((fixedpoint.f32 0.5) fixedpoint.+ fixedpoint.i64 x) vec3fp.* wdelta.x)
-          vec3fp.+ (((fixedpoint.f32 0.5) fixedpoint.+ fixedpoint.i64 y) vec3fp.* wdelta.y)
-          |> vec3fp.map fixedpoint.to_f32
-          |> (inv_area_2 vec3f.*)
-          |> vec3f.to_tuple
+          vec2fp.+ (((fixedpoint.f32 0.5) fixedpoint.+ fixedpoint.i64 x) vec2fp.* wdelta_x)
+          vec2fp.+ (((fixedpoint.f32 0.5) fixedpoint.+ fixedpoint.i64 y) vec2fp.* wdelta_y)
+          |> vec2fp.map fixedpoint.to_f32
+          |> (inv_area_2 vec2f.*)
+          |> vec2f.to_tuple
+        let w = (w0, w1, 1 - w0 - w1)
         let Z_inv = barycentric f0.Z_inv f1.Z_inv f2.Z_inv w
         let depth = barycentric_pc Z_inv (f0.depth, f0.Z_inv) (f1.depth, f1.Z_inv) (f2.depth, f2.Z_inv) w
         in ((y, x), encode_depth_index depth tri_index)
@@ -387,11 +391,14 @@ module HybridTriangleRasterizer (O: HybridTriangleRasterizerOptions) : TriangleR
                in if ((w.x fixedpoint.>= fixedpoint.i64 0)
                       && (w.y fixedpoint.>= fixedpoint.i64 0)
                       && (w.z fixedpoint.>= fixedpoint.i64 0))
-                  then let w =
-                         w vec3fp.- wbias
-                         |> vec3fp.map fixedpoint.to_f32
-                         |> (inv_area_2 vec3f.*)
-                         |> vec3f.to_tuple
+                  then let w = {x = w.x, y = w.y}
+                       let wbias = {x = wbias.x, y = wbias.y}
+                       let (w0, w1) =
+                         w vec2fp.- wbias
+                         |> vec2fp.map fixedpoint.to_f32
+                         |> (inv_area_2 vec2f.*)
+                         |> vec2f.to_tuple
+                       let w = (w0, w1, 1 - w0 - w1)
                        let Z_inv = barycentric f0.Z_inv f1.Z_inv f2.Z_inv w
                        let depth = barycentric_pc Z_inv (f0.depth, f0.Z_inv) (f1.depth, f1.Z_inv) (f2.depth, f2.Z_inv) w
                        in encode_depth_index depth tri_index
@@ -505,13 +512,17 @@ module HybridTriangleRasterizer (O: HybridTriangleRasterizerOptions) : TriangleR
                           let y = i / w
                           let pos = {x = 0.5 + f32.i64 x, y = 0.5 + f32.i64 y}
                           let {tri = (f0, f1, f2), wzero, wdelta, wbias = _, inv_area_2} = tri_infos[i64.u32 tri_index]
-                          let W =
+                          let wzero = {x = wzero.x, y = wzero.y}
+                          let wdelta_x = {x = wdelta.x.x, y = wdelta.x.y}
+                          let wdelta_y = {x = wdelta.y.x, y = wdelta.y.y}
+                          let (w0, w1) =
                             wzero
-                            vec3fp.+ (((fixedpoint.f32 0.5) fixedpoint.+ fixedpoint.i64 x) vec3fp.* wdelta.x)
-                            vec3fp.+ (((fixedpoint.f32 0.5) fixedpoint.+ fixedpoint.i64 y) vec3fp.* wdelta.y)
-                            |> vec3fp.map fixedpoint.to_f32
-                            |> (inv_area_2 vec3f.*)
-                            |> vec3f.to_tuple
+                            vec2fp.+ (((fixedpoint.f32 0.5) fixedpoint.+ fixedpoint.i64 x) vec2fp.* wdelta_x)
+                            vec2fp.+ (((fixedpoint.f32 0.5) fixedpoint.+ fixedpoint.i64 y) vec2fp.* wdelta_y)
+                            |> vec2fp.map fixedpoint.to_f32
+                            |> (inv_area_2 vec2f.*)
+                            |> vec2f.to_tuple
+                          let W = (w0, w1, 1 - w0 - w1)
                           let Z_inv = barycentric f0.Z_inv f1.Z_inv f2.Z_inv W
                           let attr = barycentric_pc_attr Z_inv (f0.attr, f0.Z_inv) (f1.attr, f1.Z_inv) (f2.attr, f2.Z_inv) W
                           in (y * w + x, (plot {pos, Z_inv, depth, attr}, depth)))
