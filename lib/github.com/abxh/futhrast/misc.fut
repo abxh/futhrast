@@ -1,10 +1,7 @@
 -- | misc constants and transformation matrices
 
-import "fragment"
-
 type vec2f = {x: f32, y: f32}
 type vec3f = {x: f32, y: f32, z: f32}
-type vec4f = {x: f32, y: f32, z: f32, w: f32}
 
 -- | right axis
 def right : vec3f = {x = 1, y = 0, z = 0}
@@ -81,10 +78,3 @@ def make_perspective (near: f32)
      , [0, 0, a, b]
      , [0, 0, 1, 0]
      ]
-
--- | check whether to cull point, depending on whether it is in NDC space
-def point_in_frustum 'varying (f: vertex_out varying) =
-  let p = f.pos
-  in (-p.w <= p.x && p.x <= p.w)
-     && (-p.w <= p.y && p.y <= p.w)
-     && (0 <= p.z && p.z <= p.w)
