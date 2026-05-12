@@ -25,13 +25,22 @@ def screen_bounds : {min: vec2f, max: vec2f} =
 -- | make orthographic matrix with custom camera bounds, mapping to NDC space
 def make_orthographic_custom (near: f32)
                              (far: f32)
+                             (aspect_ratio: f32)
+                             (depth_type: #normal_z | #reversed_z)
                              (min: vec2f)
-                             (max: vec2f)
-                             (depth_type: #normal_z | #reversed_z) : [4][4]f32 =
-  let sx = 2f32 / (max.x - min.x)
-  let sy = 2f32 / (max.y - min.y)
-  let tx = -(max.x + min.x) / (max.x - min.x)
-  let ty = -(max.y + min.y) / (max.y - min.y)
+                             (max: vec2f) : [4][4]f32 =
+  let center_x = (min.x + max.x) * 0.5
+  let center_y = (min.y + max.y) * 0.5
+  let height = max.y - min.y
+  let width = height * aspect_ratio
+  let left = center_x - width * 0.5
+  let right = center_x + width * 0.5
+  let bottom = center_y - height * 0.5
+  let top = center_y + height * 0.5
+  let sx = 2f32 / (right - left)
+  let sy = 2f32 / (top - bottom)
+  let tx = -(right + left) / (right - left)
+  let ty = -(top + bottom) / (top - bottom)
   let sz =
     match depth_type
     case #normal_z -> 1f32 / (far - near)
@@ -49,21 +58,23 @@ def make_orthographic_custom (near: f32)
 -- | make orthographic matrix, mapping to NDC space
 def make_orthographic (near: f32)
                       (far: f32)
+                      (aspect_ratio: f32)
                       (depth_type: #normal_z | #reversed_z) : [4][4]f32 =
   make_orthographic_custom near
                            far
+                           aspect_ratio
+                           depth_type
                            screen_bounds.min
                            screen_bounds.max
-                           depth_type
 
 -- | make perspective matrix, mapping to NDC space
 def make_perspective (near: f32)
                      (far: f32)
                      (fovy_rad: f32)
-                     (aspect: f32)
+                     (aspect_ratio: f32)
                      (depth_type: #normal_z | #reversed_z) : [4][4]f32 =
   let tan_half_fov = f32.tan (fovy_rad / 2f32)
-  let sx = tan_half_fov * aspect
+  let sx = tan_half_fov * aspect_ratio
   let sy = tan_half_fov
   let a =
     match depth_type

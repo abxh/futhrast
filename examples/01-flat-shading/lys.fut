@@ -268,6 +268,7 @@ module lys : lys with text_content = lys_text_content.text_content = {
 
   local
   def on_vertex (s: state) (v: (u32, (f32, f32, f32))) : vertex_out Varying.t =
+    let aspect_ratio = f32.i64 s.w / f32.i64 s.h
     let t =
       transform.identity
       |> (transform.*) (quat.one
@@ -275,7 +276,7 @@ module lys : lys with text_content = lys_text_content.text_content = {
                         |> quat.to_mat)
       |> (transform.*) (transform.scale s.zoom s.zoom 1)
       |> (transform.*) (transform.translate s.pos.0 s.pos.1 s.pos.2)
-      |> (transform.*) (make_orthographic s.zmin s.zmax #reversed_z)
+      |> (transform.*) (make_orthographic s.zmin s.zmax aspect_ratio #reversed_z)
     let vert = vec3f.from_tuple v.1
     let pos = transform.apply_to_pos vert t
     in {pos, attr = v.0}

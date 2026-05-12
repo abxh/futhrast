@@ -178,7 +178,7 @@ module CustomRenderSetup (T: TriangleRasterizerSpec) : RenderSetupSpec = \(V: Va
         match d.primitive_type
         case #points ->
           vs
-          |> filter point_in_frustum
+          |> filter cull_point
           |> map (\(v0) -> proj v0)
           |> map (\(v0) -> stw v0)
           |> Point.rasterize (on_frag u)
