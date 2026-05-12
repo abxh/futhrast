@@ -1,5 +1,5 @@
-import "../../lib/github.com/abxh/lys/lys"
-import "../../lib/github.com/athas/matte/colour"
+import "../lib/github.com/abxh/lys/lys"
+import "../lib/github.com/athas/matte/colour"
 
 import "../../lib/github.com/abxh/futhrast/setup"
 

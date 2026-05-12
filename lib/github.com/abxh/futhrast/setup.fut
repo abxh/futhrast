@@ -9,7 +9,9 @@ import "../../diku-dk/segmented/segmented"
 
 import "math/vec"
 
-open import "types"
+open import "varying"
+open import "fragment"
+open import "misc"
 open import "rasterize/point"
 open import "rasterize/line"
 open import "rasterize/triangle_imm_scanline"
@@ -175,6 +177,7 @@ module CustomRenderSetup (T: TriangleRasterizerSpec) : RenderSetupSpec = \(V: Va
         match d.primitive_type
         case #points ->
           vs
+          |> filter point_in_frustum
           |> map (\(v0) -> proj v0)
           |> map (\(v0) -> stw v0)
           |> Point.rasterize (on_frag u)

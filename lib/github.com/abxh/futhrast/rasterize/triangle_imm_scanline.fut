@@ -2,7 +2,9 @@
 
 import "../../../diku-dk/segmented/segmented"
 
-import "../types"
+import "../fragment"
+import "../varying"
+
 import "../math/vec"
 
 -- | triangle rasterizer specfication

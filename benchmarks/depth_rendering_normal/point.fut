@@ -9,7 +9,6 @@
 
 -- > :img main ($loaddata "bunny.in")
 
-import "../../lib/github.com/abxh/futhrast/types"
 import "../../lib/github.com/abxh/futhrast/setup"
 import "../../lib/github.com/abxh/futhrast/math/vec"
 

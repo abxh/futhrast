@@ -1,7 +1,11 @@
-import "lib/github.com/abxh/lys/lys"
+import "../lib/github.com/abxh/lys/lys"
 
-import "lib/github.com/abxh/futhrast/setup"
-import "lib/github.com/abxh/futhrast/math/vec"
+import "../../lib/github.com/diku-dk/cpprandom/random"
+
+import "../../lib/github.com/abxh/futhrast/setup"
+import "../../lib/github.com/abxh/futhrast/math/vec"
+import "../../lib/github.com/abxh/futhrast/math/quat"
+import "../../lib/github.com/abxh/futhrast/math/transform"
 
 type~ lys_state =
   { h: i64
@@ -27,6 +31,7 @@ type~ lys_state =
   , inds_dragon: []i64
   , inds_lucy: []i64
   , inds_armadillo: []i64
+  , colours: []u32
   , render_model:   #bunny
                   | #monkey
                   | #head
@@ -78,13 +83,13 @@ module lys_text_content = {
 module lys_file = {
   def input_file_names () =
     ""
-    ++ "bunny.obj,"
-    ++ "monkey.obj,"
-    ++ "african_head.obj,"
-    ++ "penger.obj,"
-    ++ "dragon.obj,"
-    ++ "lucy.obj,"
-    ++ "armadillo.obj,"
+    ++ "../../bunny.obj,"
+    ++ "../../monkey.obj,"
+    ++ "../../african_head.obj,"
+    ++ "../../penger.obj,"
+    ++ "../../dragon.obj,"
+    ++ "../../lucy.obj,"
+    ++ "../../armadillo.obj,"
 
   def load_bin _ _ s = s
 
@@ -136,36 +141,45 @@ module lys : lys with text_content = lys_text_content.text_content = {
 
   type~ state = lys_state
 
+  module dist = uniform_int_distribution u32 u64 xorshift128plus
+
   def grab_mouse = false
 
-  def init (_: u32) (h: i64) (w: i64) : state =
-    { w
-    , h
-    , zoom = 1
-    , zmin = 0
-    , zmax = 0
-    , pos = (0, 0, 0)
-    , pos_delta = (0, 0, 0)
-    , angle = 0
-    , angle_delta = 0
-    , inds_bunny = replicate 0 (-1)
-    , inds_monkey = replicate 0 (-1)
-    , inds_head = replicate 0 (-1)
-    , inds_penger = replicate 0 (-1)
-    , inds_dragon = replicate 0 (-1)
-    , inds_lucy = replicate 0 (-1)
-    , inds_armadillo = replicate 0 (-1)
-    , verts_bunny = replicate 0 (0, 0, 0)
-    , verts_monkey = replicate 0 (0, 0, 0)
-    , verts_head = replicate 0 (0, 0, 0)
-    , verts_penger = replicate 0 (0, 0, 0)
-    , verts_dragon = replicate 0 (0, 0, 0)
-    , verts_lucy = replicate 0 (0, 0, 0)
-    , verts_armadillo = replicate 0 (0, 0, 0)
-    , render_model = #dragon
-    , render_kind = #triangles
-    , inner_mode = #no
-    }
+  def init (seed: u32) (h: i64) (w: i64) : state =
+    let generate_u32 (n: i64) =
+      (loop (rng, out) = (xorshift128plus.rng_from_seed [i32.u32 seed], replicate n 0)
+       for i < n do
+         let (rng', x) = dist.rand (u32.lowest, u32.highest) rng
+         in (rng', out with [i] = x))
+      |> (.1)
+    in { w
+       , h
+       , zoom = 1
+       , zmin = 0
+       , zmax = 0
+       , pos = (0, 0, 0)
+       , pos_delta = (0, 0, 0)
+       , angle = 0
+       , angle_delta = 0
+       , inds_bunny = replicate 0 (-1)
+       , inds_monkey = replicate 0 (-1)
+       , inds_head = replicate 0 (-1)
+       , inds_penger = replicate 0 (-1)
+       , inds_dragon = replicate 0 (-1)
+       , inds_lucy = replicate 0 (-1)
+       , inds_armadillo = replicate 0 (-1)
+       , verts_bunny = replicate 0 (0, 0, 0)
+       , verts_monkey = replicate 0 (0, 0, 0)
+       , verts_head = replicate 0 (0, 0, 0)
+       , verts_penger = replicate 0 (0, 0, 0)
+       , verts_dragon = replicate 0 (0, 0, 0)
+       , verts_lucy = replicate 0 (0, 0, 0)
+       , verts_armadillo = replicate 0 (0, 0, 0)
+       , colours = generate_u32 1024
+       , render_model = #bunny
+       , render_kind = #triangles
+       , inner_mode = #no
+       }
 
   def resize (h: i64) (w: i64) (s: state) =
     s with h = h with w = w
@@ -253,27 +267,18 @@ module lys : lys with text_content = lys_text_content.text_content = {
   local module R = RenderSetup Varying
 
   local
-  def on_vertex (s: state) (v: (f32, f32, f32)) : vertex_out Varying.t =
-    let v = v |> vec3f.from_tuple
-    let v =
-      v with z = -v.z
-    let angle = s.angle
-    let cos_a = f32.cos angle
-    let sin_a = f32.sin angle
-    let x' = v.x * cos_a + v.z * sin_a
-    let z' = -v.x * sin_a + v.z * cos_a
-    let z' = z'
-    let zn =
-      let zrange = (s.zmin - s.zmax)
-      in (s.zmin - z') / zrange
-    in { pos =
-           { x = (x' * s.zoom) + s.pos.0
-           , y = (v.y * s.zoom) + s.pos.1
-           , z = zn
-           , w = 1
-           }
-       , attr = argb.scale argb.white zn
-       }
+  def on_vertex (s: state) (v: (u32, (f32, f32, f32))) : vertex_out Varying.t =
+    let t =
+      transform.identity
+      |> (transform.*) (quat.one
+                        |> (quat.*) (quat.rotate_y s.angle)
+                        |> quat.to_mat)
+      |> (transform.*) (transform.scale s.zoom s.zoom 1)
+      |> (transform.*) (transform.translate s.pos.0 s.pos.1 s.pos.2)
+      |> (transform.*) (make_orthographic s.zmin s.zmax #reversed_z)
+    let vert = vec3f.from_tuple v.1
+    let pos = transform.apply_to_pos vert t
+    in {pos, attr = v.0}
 
   local
   def on_fragment (_: state) (f: fragment Varying.t) : argb.colour =
@@ -301,6 +306,9 @@ module lys : lys with text_content = lys_text_content.text_content = {
     let s =
       s with zmin = reduce f32.min f32.highest (map (.2) verts)
         with zmax = reduce f32.max f32.lowest (map (.2) verts) + 1
+    let verts =
+      indices inds |> map (\i -> (s.colours[inds[i / 3] %% 1024], verts[inds[i]]))
+    let inds = indices verts
     in match s.render_kind
        case #points ->
          init_framebuffer {w = s.w, h = s.h} (argb.black, ne_depth)
@@ -325,7 +333,7 @@ module lys : lys with text_content = lys_text_content.text_content = {
                                on_fragment
          |> (.target_buffer)
        case #triangles ->
-         init_framebuffer {w = s.w, h = s.h} (argb.gray 0.2, ne_depth)
+         init_framebuffer {w = s.w, h = s.h} (argb.black, ne_depth)
          |> R.render render_config
                      s
                      { primitive_type = #triangles

@@ -5,7 +5,9 @@ import "../../../diku-dk/segmented/segmented"
 
 import "../utils/bitmask"
 
-import "../types"
+import "../fragment"
+import "../varying"
+
 import "../math/vec"
 import "../math/fixedpoint"
 

@@ -1,6 +1,7 @@
 import "../../../diku-dk/segmented/segmented"
 
-import "../types"
+import "../fragment"
+import "../varying"
 
 local
 -- | line rasterizer specfication

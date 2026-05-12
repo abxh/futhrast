@@ -5,7 +5,7 @@ all: build run
 
 build:
 	g++ -std=c++20 \
-		../../lib/github.com/abxh/lys/utils/tiny_obj_loader/tiny_obj_loader.cpp \
+		../tiny_obj_loader/tiny_obj_loader.cpp \
 		extract_obj_data.cpp \
 		-o extract_obj_data
 	./extract_obj_data ../../bunny.obj

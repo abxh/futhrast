@@ -1,4 +1,5 @@
-import "../types"
+import "../fragment"
+import "../varying"
 
 local
 -- | point rasterizer specfication

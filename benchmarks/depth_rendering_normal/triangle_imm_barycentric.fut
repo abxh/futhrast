@@ -7,7 +7,6 @@
 -- compiled input @ lucy.in
 -- compiled input @ armadillo.in
 
-import "../../lib/github.com/abxh/futhrast/types"
 import "../../lib/github.com/abxh/futhrast/setup"
 import "../../lib/github.com/abxh/futhrast/math/vec"
 import "../../lib/github.com/abxh/futhrast/utils/bitmask"

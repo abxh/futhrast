@@ -8,7 +8,9 @@ import "../utils/bitmask"
 import "../utils/flatten2d"
 import "../utils/encode_f32"
 
-import "../types"
+import "../fragment"
+import "../varying"
+
 import "../math/vec"
 import "../math/fixedpoint"
 

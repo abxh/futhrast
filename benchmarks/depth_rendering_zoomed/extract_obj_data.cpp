@@ -1,5 +1,5 @@
 
-#include "../../lib/github.com/abxh/lys/utils/tiny_obj_loader/tiny_obj_loader.h"
+#include "../tiny_obj_loader/tiny_obj_loader.h"
 
 #include <algorithm>
 #include <bit>
