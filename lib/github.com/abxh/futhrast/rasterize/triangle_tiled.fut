@@ -134,10 +134,11 @@ module TiledTriangleRasterizer (O: TiledTriangleRasterizerOptions) : TriangleRas
       def calc_edge_bias (src: vec2fp.t)
                          (dest: vec2fp.t) : fixedpoint.t =
         let edge = (vec2fp.-) dest src
-        let points_up = edge.y fixedpoint.> fixedpoint.zero
-        let points_right = edge.x fixedpoint.> fixedpoint.zero
-        let is_left_edge = points_up
-        let is_top_edge = (fixedpoint.abs edge.y) fixedpoint.<= eps && points_right
+        let points_down = edge.y fixedpoint.< fixedpoint.zero
+        let points_left = edge.x fixedpoint.> fixedpoint.zero
+        let is_horizontal = (fixedpoint.abs edge.y) fixedpoint.<= eps
+        let is_left_edge = points_down
+        let is_top_edge = is_horizontal && points_left
         in if is_left_edge || is_top_edge then fixedpoint.zero else fixedpoint.neg eps
 
       def calc_tri_edge_bias ((v0, v1, v2): (vec2fp.t, vec2fp.t, vec2fp.t)) : vec3fp.t =
