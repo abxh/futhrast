@@ -297,7 +297,7 @@ module HybridTriangleRasterizer (O: HybridTriangleRasterizerOptions) : TriangleR
           let bbox_y = bbox_index / bbox_w
           let x = (fixedpoint.f32 0.5) fixedpoint.+ fixedpoint.i64 (bbox_x + bbox.xmin)
           let y = (fixedpoint.f32 0.5) fixedpoint.+ fixedpoint.i64 (bbox_y + bbox.ymin)
-          let w = wzero vec3fp.+ (x vec3fp.* wdelta.x) vec3fp.+ (y vec3fp.* wdelta.y)
+          let w = wzero vec3fp.+ wbias vec3fp.+ (x vec3fp.* wdelta.x) vec3fp.+ (y vec3fp.* wdelta.y)
           in w.x fixedpoint.>= (fixedpoint.i64 0)
              && w.y fixedpoint.>= (fixedpoint.i64 0)
              && w.z fixedpoint.>= (fixedpoint.i64 0)
