@@ -56,9 +56,7 @@ module lys_text_content = {
     ++ "\n"
     ++ "0: snap into position\n"
     ++ "1|2|3: point|line|triangle\n"
-    ++ "w|a|s|d: movement\n"
-    ++ "+|-: zoom\n"
-    ++ "left|right: rotation\n"
+    ++ "w|s: movement\n"
     ++ "i: see inner/outer\n"
 
   def text_content (render_duration: f32) (s: lys_state) : text_content =
