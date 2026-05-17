@@ -180,33 +180,15 @@ module CustomRenderSetup (T: TriangleRasterizerSpec) : RenderSetupSpec = \(V: Va
                             (ne_target, ne_depth)
                             (target_buffer, depth_buffer)
         case #triangles ->
-          let (accepted_tris, partially_accepted_tris) =
-            (iota (length vs / 3))
-            |> map (\i -> (vs[3 * i], vs[3 * i + 1], vs[3 * i + 2]))
-            |> filter test_triangle_is_partially_inside
-            |> partition test_triangle_is_fully_inside
-          let g i =
-            let global_index = i / 9
-            let local_index = i %% 9
-            in match local_index
-               case 0 -> partially_accepted_tris[global_index].0
-               case 1 -> partially_accepted_tris[global_index].1
-               case _ -> partially_accepted_tris[global_index].2
-          in accepted_tris
-             |> concat (tabulate (length partially_accepted_tris * 9) g
-                        |> unflatten
-                        |> map (clip_triangle (\f0 f1 t ->
-                                                 { pos = Vec4f.lerp f0.pos f1.pos t
-                                                 , attr = V.lerp f0.attr f1.attr t
-                                                 }))
-                        |> expand (\{count, verts = _} -> i64.bool (count > 2) * (count - 2))
-                                  (\{count = _, verts} i -> (verts[0], verts[i + 1], verts[i + 2])))
-             |> map (\(v0, v1, v2) -> (f v0, f v1, f v2))
-             |> filter (\tri -> winding_order_test c tri)
-             |> Triangle.rasterize (on_frag u)
-                                   c.depth_type
-                                   (ne_target, ne_depth)
-                                   (target_buffer, depth_buffer)
+          (iota (length vs / 3))
+          |> map (\i -> (vs[3 * i], vs[3 * i + 1], vs[3 * i + 2]))
+          |> filter test_triangle_is_partially_inside
+          |> map (\(v0, v1, v2) -> (f v0, f v1, f v2))
+          |> filter (\tri -> winding_order_test c tri)
+          |> Triangle.rasterize (on_frag u)
+                                c.depth_type
+                                (ne_target, ne_depth)
+                                (target_buffer, depth_buffer)
       in {target_buffer, depth_buffer, ne_target, ne_depth}
 
     def render_wireframe 'uniform 'vertex 'target [w] [h]

@@ -41,7 +41,7 @@ type~ lys_state =
   }
 
 module lys_text_content = {
-  type text_content = (i64, i64)
+  type text_content = (i64, i64, i64, i64)
 
   def text_format () =
     "FPS: %ld\n"
@@ -54,6 +54,8 @@ module lys_text_content = {
     ++ "r: dragon\n"
     ++ "l: lucy\n"
     ++ "o: armadillo\n"
+    ++ "x: %ld\n"
+    ++ "y: %ld\n"
     ++ "\n"
     ++ "0: snap into position\n"
     ++ "1|2|3: point|line|triangle\n"
@@ -72,7 +74,7 @@ module lys_text_content = {
       case #dragon -> length s.inds_dragon / 3
       case #lucy -> length s.inds_lucy / 3
       case #armadillo -> length s.inds_armadillo / 3
-    in (i64.f32 render_duration, num_triangles)
+    in (i64.f32 render_duration, num_triangles, i64.f32 (s.pos.0 * 100000), i64.f32 (s.pos.1 * 100000))
 
   def text_colour = const argb.white
 }
@@ -146,7 +148,7 @@ module lys : lys with text_content = lys_text_content.text_content = {
     , zoom = 1
     , zmin = 0
     , zmax = 0
-    , pos = (0, 0, 0)
+    , pos = (62725 / 100000, 0, 0)
     , pos_delta = (0, 0, 0)
     , angle = 0
     , angle_delta = 0
@@ -164,7 +166,7 @@ module lys : lys with text_content = lys_text_content.text_content = {
     , verts_dragon = replicate 0 (0, 0, 0)
     , verts_lucy = replicate 0 (0, 0, 0)
     , verts_armadillo = replicate 0 (0, 0, 0)
-    , render_model = #bunny
+    , render_model = #lucy
     , render_kind = #triangles
     , inner_mode = #no
     }
@@ -198,13 +200,13 @@ module lys : lys with text_content = lys_text_content.text_content = {
            case #no -> #yes
            case #yes -> #no
     else if key == SDLK_a
-    then s with pos_delta.0 = -1
+    then s with pos_delta.0 = -0.1
     else if key == SDLK_d
-    then s with pos_delta.0 = 1
+    then s with pos_delta.0 = 0.1
     else if key == SDLK_w
-    then s with pos_delta.1 = 1
+    then s with pos_delta.1 = 0.1
     else if key == SDLK_s
-    then s with pos_delta.1 = -1
+    then s with pos_delta.1 = -0.1
     else if key == SDLK_RIGHT
     then s with angle_delta = 1
     else if key == SDLK_LEFT
