@@ -8,11 +8,11 @@
 import "../../diku-dk/segmented/segmented"
 
 import "math/vec"
+import "clip"
 
 open import "varying"
 open import "fragment"
 open import "misc"
-open import "clip"
 open import "rasterize/point"
 open import "rasterize/line"
 open import "rasterize/triangle_imm_scanline"
@@ -108,6 +108,9 @@ module type RenderSetupSpec =
 -- | rendering setup implementation
 module CustomRenderSetup (T: TriangleRasterizerSpec) : RenderSetupSpec = \(V: VaryingSpec) ->
   {
+    local module V = VaryingExtensions V
+    local module Vec4f = VaryingExtensions vec4f
+
     local module Point = PointRasterizer V
     local module Line = LineRasterizer V
     local module Triangle = T V
@@ -124,7 +127,7 @@ module CustomRenderSetup (T: TriangleRasterizerSpec) : RenderSetupSpec = \(V: Va
       in {pos = {x = x'', y = y''}, depth, Z_inv, attr}
 
     local
-    def winding_order_check (c: render_config) (f0: fragment V.t, f1: fragment V.t, f2: fragment V.t) : bool =
+    def winding_order_test (c: render_config) (f0: fragment V.t, f1: fragment V.t, f2: fragment V.t) : bool =
       if c.triangle_winding_order == #neither
       then true
       else let (v0, v1, v2) = (f0.pos, f1.pos, f2.pos)
@@ -133,27 +136,6 @@ module CustomRenderSetup (T: TriangleRasterizerSpec) : RenderSetupSpec = \(V: Va
            let signed_area_2 = v0v1 `vec2f.cross` v0v2
            in signed_area_2 > 0 && c.triangle_winding_order == #counterclockwise
               || signed_area_2 < 0 && c.triangle_winding_order == #clockwise
-
-    local
-    def line_bbox_check {w = w: i64, h = h: i64} (f0: fragment V.t, f1: fragment V.t) : bool =
-      let (p0, p1) = (f0.pos, f1.pos)
-      let xmin = (p0.x `f32.min` p1.x) |> (f32.floor >-> i64.f32)
-      let ymin = (p0.y `f32.min` p1.y) |> (f32.floor >-> i64.f32)
-      let xmax = (p0.x `f32.max` p1.x) |> (f32.ceil >-> i64.f32)
-      let ymax = (p0.y `f32.max` p1.y) |> (f32.ceil >-> i64.f32)
-      let area_check = (xmax - xmin > 1) && (ymax - ymin > 1)
-      let overlap_check = !(w <= xmin || 0 >= xmax || h <= ymin || 0 >= ymax)
-      in area_check && overlap_check
-
-    local
-    def tri_bbox_area_check (f0: fragment V.t, f1: fragment V.t, f2: fragment V.t) : bool =
-      let (p0, p1, p2) = (f0.pos, f1.pos, f2.pos)
-      let xmin = (p0.x `f32.min` p1.x `f32.min` p2.x) |> (f32.floor >-> i64.f32)
-      let ymin = (p0.y `f32.min` p1.y `f32.min` p2.y) |> (f32.floor >-> i64.f32)
-      let xmax = (p0.x `f32.max` p1.x `f32.max` p2.x) |> (f32.ceil >-> i64.f32)
-      let ymax = (p0.y `f32.max` p1.y `f32.max` p2.y) |> (f32.ceil >-> i64.f32)
-      let area_check = (xmax - xmin > 1) && (ymax - ymin > 1)
-      in area_check
 
     def render 'uniform 'vertex 'target [w] [h]
                (c: render_config)
@@ -170,17 +152,15 @@ module CustomRenderSetup (T: TriangleRasterizerSpec) : RenderSetupSpec = \(V: Va
                    , ne_target: target
                    , ne_depth: f32
                    } =
-      let stw = map_screen_to_window c {h, w}
-      let winding_order_check = winding_order_check c
+      let f = proj >-> map_screen_to_window c {h, w}
       let vs = map (on_vert u) d.vertices
       let vs = map (\i -> vs[i]) d.indices
       let (target_buffer, depth_buffer) =
         match d.primitive_type
         case #points ->
           vs
-          |> filter cull_point
-          |> map (\(v0) -> proj v0)
-          |> map (\(v0) -> stw v0)
+          |> filter test_point_bounds
+          |> map (\(v0) -> f v0)
           |> Point.rasterize (on_frag u)
                              c.depth_type
                              (ne_target, ne_depth)
@@ -188,23 +168,45 @@ module CustomRenderSetup (T: TriangleRasterizerSpec) : RenderSetupSpec = \(V: Va
         case #lines ->
           (iota (length vs / 2))
           |> map (\i -> (vs[2 * i], vs[2 * i + 1]))
-          |> map (\(v0, v1) -> (proj v0, proj v1))
-          |> map (\(v0, v1) -> (stw v0, stw v1))
-          |> filter (\tri -> line_bbox_check {w, h} tri)
+          |> map (\l -> (l, test_line_bounds l))
+          |> filter ((.1) >-> (.0))
+          |> map (\(({pos = pos0, attr = attr0}, {pos = pos1, attr = attr1}), (_, t0, t1)) ->
+                    let f0' = {pos = Vec4f.lerp pos0 pos1 t0, attr = V.lerp attr0 attr1 t0}
+                    let f1' = {pos = Vec4f.lerp pos0 pos1 t1, attr = V.lerp attr0 attr1 t1}
+                    in (f0', f1'))
+          |> map (\(v0, v1) -> (f v0, f v1))
           |> Line.rasterize (on_frag u)
                             c.depth_type
                             (ne_target, ne_depth)
                             (target_buffer, depth_buffer)
         case #triangles ->
-          (iota (length vs / 3))
-          |> map (\i -> (vs[3 * i], vs[3 * i + 1], vs[3 * i + 2]))
-          |> map (\(v0, v1, v2) -> (proj v0, proj v1, proj v2))
-          |> map (\(v0, v1, v2) -> (stw v0, stw v1, stw v2))
-          |> filter (\tri -> winding_order_check tri && tri_bbox_area_check tri)
-          |> Triangle.rasterize (on_frag u)
-                                c.depth_type
-                                (ne_target, ne_depth)
-                                (target_buffer, depth_buffer)
+          let (accepted_tris, partially_accepted_tris) =
+            (iota (length vs / 3))
+            |> map (\i -> (vs[3 * i], vs[3 * i + 1], vs[3 * i + 2]))
+            |> filter test_triangle_is_partially_inside
+            |> partition test_triangle_is_fully_inside
+          let g i =
+            let global_index = i / 9
+            let local_index = i %% 9
+            in match local_index
+               case 0 -> partially_accepted_tris[global_index].0
+               case 1 -> partially_accepted_tris[global_index].1
+               case _ -> partially_accepted_tris[global_index].2
+          in accepted_tris
+             |> concat (tabulate (length partially_accepted_tris * 9) g
+                        |> unflatten
+                        |> map (clip_triangle (\f0 f1 t ->
+                                                 { pos = Vec4f.lerp f0.pos f1.pos t
+                                                 , attr = V.lerp f0.attr f1.attr t
+                                                 }))
+                        |> expand (\{count, verts = _} -> i64.bool (count > 2) * (count - 2))
+                                  (\{count = _, verts} i -> (verts[0], verts[i + 1], verts[i + 2])))
+             |> map (\(v0, v1, v2) -> (f v0, f v1, f v2))
+             |> filter (\tri -> winding_order_test c tri)
+             |> Triangle.rasterize (on_frag u)
+                                   c.depth_type
+                                   (ne_target, ne_depth)
+                                   (target_buffer, depth_buffer)
       in {target_buffer, depth_buffer, ne_target, ne_depth}
 
     def render_wireframe 'uniform 'vertex 'target [w] [h]
@@ -222,7 +224,7 @@ module CustomRenderSetup (T: TriangleRasterizerSpec) : RenderSetupSpec = \(V: Va
                              , ne_target: target
                              , ne_depth: f32
                              } =
-      let stw = map_screen_to_window c {h, w}
+      let f = proj >-> map_screen_to_window c {h, w}
       let vs = map (on_vert u) d.vertices
       let vs = map (\i -> vs[i]) d.indices
       let (target_buffer, depth_buffer) =
@@ -231,9 +233,13 @@ module CustomRenderSetup (T: TriangleRasterizerSpec) : RenderSetupSpec = \(V: Va
           (iota (length vs / 3))
           |> map (\i -> (vs[3 * i], vs[3 * i + 1], vs[3 * i + 2]))
           |> expand (\_ -> 3) (\t j -> if j == 0 then (t.0, t.1) else if j == 1 then (t.1, t.2) else (t.2, t.0))
-          |> map (\(v0, v1) -> (proj v0, proj v1))
-          |> map (\(v0, v1) -> (stw v0, stw v1))
-          |> filter (\tri -> line_bbox_check {w, h} tri)
+          |> map (\l -> (l, test_line_bounds l))
+          |> filter ((.1) >-> (.0))
+          |> map (\(({pos = pos0, attr = attr0}, {pos = pos1, attr = attr1}), (_, t0, t1)) ->
+                    let f0' = {pos = Vec4f.lerp pos0 pos1 t0, attr = V.lerp attr0 attr1 t0}
+                    let f1' = {pos = Vec4f.lerp pos0 pos1 t1, attr = V.lerp attr0 attr1 t1}
+                    in (f0', f1'))
+          |> map (\(v0, v1) -> (f v0, f v1))
           |> Line.rasterize (on_frag u)
                             c.depth_type
                             (ne_target, ne_depth)

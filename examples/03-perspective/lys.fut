@@ -10,7 +10,6 @@ type~ lys_state =
   , w: i64
   , pos: (f32, f32, f32)
   , pos_delta: (f32, f32, f32)
-  , zoom: f32
   , angle: f32
   , angle_delta: f32
   , zmax: f32
@@ -143,10 +142,9 @@ module lys : lys with text_content = lys_text_content.text_content = {
   def init (_: u32) (h: i64) (w: i64) : state =
     { w
     , h
-    , zoom = 1
     , zmin = 0
     , zmax = 0
-    , pos = (0, 0, 0)
+    , pos = (0, 0, -3)
     , pos_delta = (0, 0, 0)
     , angle = 0
     , angle_delta = 0
@@ -197,41 +195,15 @@ module lys : lys with text_content = lys_text_content.text_content = {
     then s with inner_mode = match s.inner_mode
            case #no -> #yes
            case #yes -> #no
-    else if key == SDLK_a
-    then s with pos_delta.0 = -1
-    else if key == SDLK_d
-    then s with pos_delta.0 = 1
     else if key == SDLK_w
-    then s with pos_delta.1 = 1
+    then s with pos_delta.2 = 1
     else if key == SDLK_s
-    then s with pos_delta.1 = -1
-    else if key == SDLK_RIGHT
-    then s with angle_delta = 1
-    else if key == SDLK_LEFT
-    then s with angle_delta = -1
-    else if key == SDLK_PLUS
-    then s with zoom = s.zoom * 1.1
-    else if key == SDLK_MINUS
-    then s with zoom = s.zoom / 1.1
-    else if key == SDLK_0
-    then s with pos = (0, 0, 0)
-           with zoom = 1
-           with angle = 0
+    then s with pos_delta.2 = -1
     else s
 
   def keyup (key: i32) (s: state) =
-    if key == SDLK_RIGHT
-    then s with angle_delta = 0
-    else if key == SDLK_LEFT
-    then s with angle_delta = 0
-    else if key == SDLK_a
-    then s with pos_delta.0 = 0
-    else if key == SDLK_d
-    then s with pos_delta.0 = 0
-    else if key == SDLK_w
-    then s with pos_delta.1 = 0
-    else if key == SDLK_s
-    then s with pos_delta.1 = 0
+    if key == SDLK_w || key == SDLK_s
+    then s with pos_delta.2 = 0
     else s
 
   def event (e: event) (s: state) =
@@ -257,16 +229,20 @@ module lys : lys with text_content = lys_text_content.text_content = {
   local
   def on_vertex (s: state) (v: (f32, f32, f32)) : vertex_out Varying.t =
     let aspect_ratio = f32.i64 s.w / f32.i64 s.h
-    let t =
+    let model =
       transform.identity
-      |> (transform.*) (quat.one
-                        |> (quat.*) (quat.rotate_y s.angle)
-                        |> quat.to_mat)
-      |> (transform.*) (transform.scale s.zoom s.zoom 1)
-      |> (transform.*) (transform.translate s.pos.0 s.pos.1 s.pos.2)
+    let view =
+      transform.identity
+      |> (transform.*) (transform.translate_vec (s.pos |> vec3f.from_tuple |> vec3f.neg))
+    let proj =
+      transform.identity
       |> (transform.*) (make_perspective s.zmin s.zmax (45 * 3.14 / 180) aspect_ratio #reversed_z)
+    let mvp =
+      model
+      |> (transform.*) view
+      |> (transform.*) proj
     let v = vec3f.from_tuple v
-    let pos = transform.apply_to_pos v t
+    let pos = transform.apply_to_pos v mvp
     in { pos
        , attr = argb.scale argb.white pos.z
        }
@@ -296,7 +272,7 @@ module lys : lys with text_content = lys_text_content.text_content = {
       case #armadillo -> (s.verts_armadillo, s.inds_armadillo)
     let s =
       s with zmin = reduce f32.min f32.highest (map (.2) verts)
-        with zmax = reduce f32.max f32.lowest (map (.2) verts) + 1
+        with zmax = reduce f32.max f32.lowest (map (.2) verts) + 1 + 3
     in match s.render_kind
        case #points ->
          init_framebuffer {w = s.w, h = s.h} (argb.black, ne_depth)

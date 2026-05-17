@@ -263,7 +263,7 @@ module lys : lys with text_content = lys_text_content.text_content = {
                         |> (quat.*) (quat.rotate_y s.angle)
                         |> quat.to_mat)
       |> (transform.*) (transform.scale s.zoom s.zoom 1)
-      |> (transform.*) (transform.translate s.pos.0 s.pos.1 s.pos.2)
+      |> (transform.*) (transform.translate_tup s.pos)
       |> (transform.*) (make_orthographic s.zmin s.zmax aspect_ratio #reversed_z)
     let v = vec3f.from_tuple v
     let pos = transform.apply_to_pos v t

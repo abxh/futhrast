@@ -52,38 +52,33 @@ module LineRasterizer : LineRasterizerSpec = \(V: VaryingSpec) ->
       let size = i64.i32 (i32.max (i32.abs (x1 - x0)) (i32.abs (y1 - y0)))
       in i64.bool (size != 0) + size
 
-    def get_point_in_line ((v0, v1): line) (i: i64) : fragment_generic i32 V.t =
+    def get_point_in_line_step_x ((v0, v1): line) (i: i64) =
       let (p0, p1) = (v0.pos, v1.pos)
-      in if i32.abs (p0.x - p1.x) > i32.abs (p0.y - p1.y)
-         then let dir = compare_i32 (p0.x) (p1.x)
-              let sl = get_line_slope p0 p1
-              let pos =
-                { x = p0.x + dir * i32.i64 i
-                , y = p0.y + i32.f32 (f32.round (sl * f32.i64 i))
-                }
-              let t = f32.from_fraction i (get_line_size (v0, v1) - 1)
-              let Z_inv = f32.lerp v0.Z_inv v1.Z_inv t
-              let depth = lerp_pc_f32 Z_inv (v0.depth, v0.Z_inv) (v1.depth, v1.Z_inv) t
-              let attr = lerp_pc_attr Z_inv (v0.attr, v0.Z_inv) (v1.attr, v1.Z_inv) t
-              in {pos, Z_inv, depth, attr}
-         else let dir = compare_i32 (p0.y) (p1.y)
-              let sl = get_line_slope {x = p0.y, y = p0.x} {x = p1.y, y = p1.x}
-              let pos =
-                { x = p0.x + i32.f32 (f32.round (sl * f32.i64 i))
-                , y = p0.y + dir * i32.i64 i
-                }
-              let t = f32.from_fraction i (get_line_size (v0, v1) - 1)
-              let Z_inv = f32.lerp v0.Z_inv v1.Z_inv t
-              let depth = lerp_pc_f32 Z_inv (v0.depth, v0.Z_inv) (v1.depth, v1.Z_inv) t
-              let attr = lerp_pc_attr Z_inv (v0.attr, v0.Z_inv) (v1.attr, v1.Z_inv) t
-              in {pos, depth, Z_inv, attr}
+      let dir = compare_i32 (p0.x) (p1.x)
+      let sl = get_line_slope p0 p1
+      let pos =
+        { x = p0.x + dir * i32.i64 i
+        , y = p0.y + i32.f32 (f32.round (sl * f32.i64 i))
+        }
+      let t = f32.from_fraction i (get_line_size (v0, v1) - 1)
+      let Z_inv = f32.lerp v0.Z_inv v1.Z_inv t
+      let depth = lerp_pc_f32 Z_inv (v0.depth, v0.Z_inv) (v1.depth, v1.Z_inv) t
+      let attr = lerp_pc_attr Z_inv (v0.attr, v0.Z_inv) (v1.attr, v1.Z_inv) t
+      in {pos, Z_inv, depth, attr}
 
-    def round_fragment (f: fragment_generic f32 V.t) : fragment_generic i32 V.t =
-      { pos = {x = i32.f32 (f.pos.x + 0.5), y = i32.f32 (f.pos.y + 0.5)}
-      , depth = f.depth
-      , Z_inv = f.Z_inv
-      , attr = f.attr
-      }
+    def get_point_in_line_step_y ((v0, v1): line) (i: i64) =
+      let (p0, p1) = (v0.pos, v1.pos)
+      let dir = compare_i32 (p0.y) (p1.y)
+      let sl = get_line_slope {x = p0.y, y = p0.x} {x = p1.y, y = p1.x}
+      let pos =
+        { x = p0.x + i32.f32 (f32.round (sl * f32.i64 i))
+        , y = p0.y + dir * i32.i64 i
+        }
+      let t = f32.from_fraction i (get_line_size (v0, v1) - 1)
+      let Z_inv = f32.lerp v0.Z_inv v1.Z_inv t
+      let depth = lerp_pc_f32 Z_inv (v0.depth, v0.Z_inv) (v1.depth, v1.Z_inv) t
+      let attr = lerp_pc_attr Z_inv (v0.attr, v0.Z_inv) (v1.attr, v1.Z_inv) t
+      in {pos, depth, Z_inv, attr}
 
     def unpack_fragment (f: fragment_generic i32 V.t) =
       let y = i64.i32 f.pos.y
@@ -96,31 +91,59 @@ module LineRasterizer : LineRasterizerSpec = \(V: VaryingSpec) ->
         }
       in ((y, x), f', f.depth)
 
+    def round_fragment (f: fragment_generic f32 V.t) : fragment_generic i32 V.t =
+      { pos = {x = i32.f32 (f.pos.x + 0.5), y = i32.f32 (f.pos.y + 0.5)}
+      , depth = f.depth
+      , Z_inv = f.Z_inv
+      , attr = f.attr
+      }
+
     def rasterize 'target [n] [h] [w]
                   (plot: (fragment V.t -> target))
                   (depth_type: #normal_z | #reversed_z)
                   ((ne_target, ne_depth): (target, f32))
                   ((target_buffer, depth_buffer): ([h][w]target, [h][w]f32))
                   (frags: [n](fragment V.t, fragment V.t)) : ([h][w]target, [h][w]f32) =
+      let depth_buffer = copy depth_buffer
+      let target_buffer = copy target_buffer
       let depth_select lhs rhs =
         if depth_type == #reversed_z
         then f32.max lhs rhs
         else f32.min lhs rhs
-      let (is, frag_values, depth_values) =
+      let (xfrags, yfrags) =
         frags
         |> map (\l -> (round_fragment l.0, round_fragment l.1))
-        |> expand get_line_size get_point_in_line
+        |> partition (\(v0, v1) ->
+                        let (p0, p1) = (v0.pos, v1.pos)
+                        in i32.abs (p0.x - p1.x) > i32.abs (p0.y - p1.y))
+      let (xis, xfrag_values, depth_values) =
+        xfrags
+        |> expand get_line_size get_point_in_line_step_x
         |> map unpack_fragment
         |> unzip3
-      let depth_buffer = reduce_by_index_2d (copy depth_buffer) depth_select ne_depth is depth_values
+      let depth_buffer = reduce_by_index_2d depth_buffer depth_select ne_depth xis depth_values
+      let (yis, yfrag_values, depth_values) =
+        yfrags
+        |> expand get_line_size get_point_in_line_step_y
+        |> map unpack_fragment
+        |> unzip3
+      let depth_buffer = reduce_by_index_2d depth_buffer depth_select ne_depth yis depth_values
       let (is, target_values) =
-        zip is frag_values
+        zip xis xfrag_values
         |> map (\((y, x), f) ->
                   if (0 <= x && x < w) && (0 <= y && y < h) && depth_buffer[y, x] == f.depth
                   then ((y, x), plot f)
                   else ((-1, -1), ne_target))
         |> unzip2
-      let target_buffer = scatter_2d (copy target_buffer) is target_values
+      let target_buffer = scatter_2d target_buffer is target_values
+      let (is, target_values) =
+        zip yis yfrag_values
+        |> map (\((y, x), f) ->
+                  if (0 <= x && x < w) && (0 <= y && y < h) && depth_buffer[y, x] == f.depth
+                  then ((y, x), plot f)
+                  else ((-1, -1), ne_target))
+        |> unzip2
+      let target_buffer = scatter_2d target_buffer is target_values
       in (target_buffer, depth_buffer)
   }
 

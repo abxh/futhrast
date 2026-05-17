@@ -44,14 +44,14 @@ module type HybridTriangleRasterizerOptions = {
 
 module HybridTriangleRasterizerDefaultOptions : HybridTriangleRasterizerOptions = {
   module coarse_mask = bitmask_64
-  module small_triangle_mask = bitmask_64
+  module small_triangle_mask = bitmask_128
   module bin_pattern = morton_u16_pattern
   module coarse_pattern = morton_u16_pattern
 
   def bin_shift : i64 = 7
   def fine_shift : i64 = 4
   def num_intrablocks_shift : i64 = 8
-  def small_triangle_size_shift : i64 = 6
+  def small_triangle_size_shift : i64 = 7
 }
 
 -- | tiled-hybrid triangle rasterizer
@@ -235,6 +235,9 @@ module HybridTriangleRasterizer (O: HybridTriangleRasterizerOptions) : TriangleR
                       {h = h: i64, w = w: i64}
                       (tri_idxs: [n]u32)
                       (tris: [n]triangle) =
+      let small_triangle_size =
+        assert (small_triangle_size == small_triangle_mask.num_bits)
+        small_triangle_size
       let f tri_index =
         let tri_bbox = calc_tri_bbox tris[i64.u32 tri_index]
         let tri_bbox' =

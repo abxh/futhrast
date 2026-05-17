@@ -139,28 +139,18 @@ module ImmScanlineTriangleRasterizer : TriangleRasterizerSpec = \(V: VaryingSpec
       let x = i64.f32 f.pos.x
       in ((y, x), f, f.depth)
 
-    def tri_bbox_check {w = w: i64, h = h: i64} (f0: fragment V.t, f1: fragment V.t, f2: fragment V.t) : bool =
-      let (p0, p1, p2) = (f0.pos, f1.pos, f2.pos)
-      let xmin = (p0.x `f32.min` p1.x `f32.min` p2.x) |> (f32.floor >-> i64.f32)
-      let ymin = (p0.y `f32.min` p1.y `f32.min` p2.y) |> (f32.floor >-> i64.f32)
-      let xmax = (p0.x `f32.max` p1.x `f32.max` p2.x) |> (f32.ceil >-> i64.f32)
-      let ymax = (p0.y `f32.max` p1.y `f32.max` p2.y) |> (f32.ceil >-> i64.f32)
-      in !(w <= xmin || 0 >= xmax || h <= ymin || 0 >= ymax)
-
     def rasterize 'target [n] [h] [w]
                   (plot: (fragment V.t -> target))
                   (depth_type: #normal_z | #reversed_z)
                   ((ne_target, ne_depth): (target, f32))
                   ((target_buffer, depth_buffer): ([h][w]target, [h][w]f32))
                   (tris: [n](fragment V.t, fragment V.t, fragment V.t)) : ([h][w]target, [h][w]f32) =
-      -- note: filter prepass as workaround for large number of triangles offscreen to spare some framerate
       let depth_select lhs rhs =
         if depth_type == #reversed_z
         then f32.max lhs rhs
         else f32.min lhs rhs
       let tris =
         tris
-        |> filter (tri_bbox_check {w, h})
         |> map ensure_cclockwise_winding_order
       let (is, frag_values, depth_values) =
         zip tris (indices tris)

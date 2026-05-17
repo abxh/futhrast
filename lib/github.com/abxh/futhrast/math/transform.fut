@@ -39,6 +39,9 @@ module transform = {
   def translate_y dy = translate 0 dy 0
   def translate_z dz = translate 0 0 dz
 
+  def translate_vec (v: {x: f32, y: f32, z: f32}) = translate v.x v.y v.z
+  def translate_tup (dx: f32, dy: f32, dz: f32) = translate dx dy dz
+
   -- (x,y,z) |-> (x * sx, y * sy, z * sz)
   def scale (sx: f32) (sy: f32) (sz: f32) : [4][4]f32 =
     let sx = assert (sx != 0) sx
@@ -57,6 +60,9 @@ module transform = {
   def reflect_x = scale (-1) 0 0
   def reflect_y = scale 0 (-1) 0
   def reflect_z = scale 0 0 (-1)
+
+  def scale_vec (v: {x: f32, y: f32, z: f32}) = scale v.x v.y v.z
+  def scale_tup (sx: f32, sy: f32, sz: f32) = scale sx sy sz
 
   -- (x,y,z) |-> (x + s * z, y + t * z, z)
   def sheer_xy (s: f32) (t: f32) : [4][4]f32 =
