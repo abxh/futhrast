@@ -4,10 +4,12 @@ import "../../../diku-dk/linalg/linalg"
 
 import "vec"
 
-local module linalg_f32 = mk_linalg f32
+local module linalg_f32 = mk_ordered_linalg f32
 
 module transform = {
   def (*) = linalg_f32.matmul
+  def inverse = linalg_f32.inv
+  def transpose = transpose
 
   -- | apply to position vector
   def apply_to_pos (p: vec3f.t) (m: [4][4]f32) =

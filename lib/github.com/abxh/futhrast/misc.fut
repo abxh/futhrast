@@ -22,50 +22,27 @@ def ndc_bounds : {min: vec3f, max: vec3f} =
 def screen_bounds : {min: vec2f, max: vec2f} =
   {min = {x = (-1), y = (-1)}, max = {x = 1, y = 1}}
 
--- | make orthographic matrix with custom camera bounds, mapping to NDC space
-def make_orthographic_custom (near: f32)
-                             (far: f32)
-                             (aspect_ratio: f32)
-                             (depth_type: #normal_z | #reversed_z)
-                             (min: vec2f)
-                             (max: vec2f) : [4][4]f32 =
-  let center_x = (min.x + max.x) * 0.5
-  let center_y = (min.y + max.y) * 0.5
-  let height = max.y - min.y
-  let width = height * aspect_ratio
-  let left = center_x - width * 0.5
-  let right = center_x + width * 0.5
-  let bottom = center_y - height * 0.5
-  let top = center_y + height * 0.5
-  let sx = 2f32 / (right - left)
-  let sy = 2f32 / (top - bottom)
-  let tx = -(right + left) / (right - left)
-  let ty = -(top + bottom) / (top - bottom)
-  let sz =
-    match depth_type
-    case #normal_z -> 1f32 / (far - near)
-    case #reversed_z -> -1f32 / (far - near)
-  let tz =
-    match depth_type
-    case #normal_z -> far / (far - near)
-    case #reversed_z -> -near / (far - near)
-  in [ [sx, 0, 0, tx]
-     , [0, sy, 0, ty]
-     , [0, 0, sz, tz]
-     , [0, 0, 0, 1.0]
-     ]
-
 -- | make orthographic matrix, mapping to NDC space
 def make_orthographic (near: f32)
                       (far: f32)
                       (aspect_ratio: f32)
                       (depth_type: #normal_z | #reversed_z) : [4][4]f32 =
-  make_orthographic_custom near
-                           far
-                           aspect_ratio
-                           depth_type
-                           screen_bounds.min
-                           screen_bounds.max
+  let inv = 1f32 / (far - near)
+  let sx = 1f32 / aspect_ratio
+  let sy = 1f32
+  let sz =
+    match depth_type
+    case #normal_z -> inv
+    case #reversed_z -> -inv
+  let tz =
+    match depth_type
+    case #normal_z -> far * inv
+    case #reversed_z -> -near * inv
+  in [ [sx, 0, 0, 0]
+     , [0, sy, 0, 0]
+     , [0, 0, sz, tz]
+     , [0, 0, 0, 1]
+     ]
 
 -- | make perspective matrix, mapping to NDC space
 def make_perspective (near: f32)

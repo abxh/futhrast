@@ -83,7 +83,7 @@ module type vec_space_float = {
   include vec_space
 
   -- | vector norm
-  val norm : t -> value
+  val length : t -> value
 
   -- | normalize vector
   val normalize : t -> t
@@ -237,8 +237,8 @@ module mk_vspace2f (scalar: scalar_float)
     } = {
   open mk_vspace2 scalar
 
-  def norm (v: t) = scalar.sqrt (dot v v)
-  def normalize (v: t) = v / norm v
+  def length (v: t) = scalar.sqrt (dot v v)
+  def normalize (v: t) = v / length v
 }
 
 module mk_vspace3 (scalar: scalar)
@@ -306,8 +306,8 @@ module mk_vspace3f (scalar: scalar_float)
     } = {
   open mk_vspace3 scalar
 
-  def norm (v: t) = scalar.sqrt (dot v v)
-  def normalize (v: t) = v / norm v
+  def length (v: t) = scalar.sqrt (dot v v)
+  def normalize (v: t) = v / length v
 }
 
 module mk_vspace4 (scalar: scalar)
@@ -371,8 +371,8 @@ module mk_vspace4f (scalar: scalar_float)
     } = {
   open mk_vspace4 scalar
 
-  def norm (v: t) = scalar.sqrt (dot v v)
-  def normalize (v: t) = v / norm v
+  def length (v: t) = scalar.sqrt (dot v v)
+  def normalize (v: t) = v / length v
 }
 
 local

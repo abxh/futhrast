@@ -103,6 +103,29 @@ module type RenderSetupSpec =
          , ne_target: target
          , ne_depth: f32
          }
+
+    -- render normals onto framebuffer
+    val render_normals 'uniform 'target [w] [h] [v] [i] [n] :
+      (c: render_config)
+      -> (u: uniform)
+      -> (d: { primitive_type: #points | #lines | #triangles
+             , vertices: [v](f32, f32, f32)
+             , indices: [i]i64
+             })
+      -> (normals: [n](f32, f32, f32))
+      -> (normal_scale: f32)
+      -> (on_vert: vertex_shader uniform V.t (f32, f32, f32))
+      -> (on_frag: fragment_shader uniform V.t target)
+      -> { target_buffer: [h][w]target
+         , depth_buffer: [h][w]f32
+         , ne_target: target
+         , ne_depth: f32
+         }
+      -> { target_buffer: [h][w]target
+         , depth_buffer: [h][w]f32
+         , ne_target: target
+         , ne_depth: f32
+         }
   }
 
 -- | rendering setup implementation
@@ -180,15 +203,34 @@ module CustomRenderSetup (T: TriangleRasterizerSpec) : RenderSetupSpec = \(V: Va
                             (ne_target, ne_depth)
                             (target_buffer, depth_buffer)
         case #triangles ->
-          (iota (length vs / 3))
-          |> map (\i -> (vs[3 * i], vs[3 * i + 1], vs[3 * i + 2]))
-          |> filter test_triangle_is_partially_inside
-          |> map (\(v0, v1, v2) -> (f v0, f v1, f v2))
-          |> filter (\tri -> winding_order_test c tri)
-          |> Triangle.rasterize (on_frag u)
-                                c.depth_type
-                                (ne_target, ne_depth)
-                                (target_buffer, depth_buffer)
+          let (accepted_tris, partially_accepted_tris) =
+            (iota (length vs / 3))
+            |> map (\i -> (vs[3 * i], vs[3 * i + 1], vs[3 * i + 2]))
+            |> filter test_triangle_is_partially_inside
+            |> partition test_triangle_is_fully_inside
+          let g i =
+            let global_index = i / 9
+            let local_index = i %% 9
+            in match local_index
+               case 0 -> partially_accepted_tris[global_index].0
+               case 1 -> partially_accepted_tris[global_index].1
+               case _ -> partially_accepted_tris[global_index].2
+          let clipped_tris =
+            tabulate (length partially_accepted_tris * 9) g
+            |> unflatten
+            |> map (clip_triangle (\f0 f1 t ->
+                                     { pos = Vec4f.lerp f0.pos f1.pos t
+                                     , attr = V.lerp f0.attr f1.attr t
+                                     }))
+            |> expand (\{count, verts = _} -> i64.bool (count > 2) * (count - 2))
+                      (\{count = _, verts} i -> (verts[0], verts[i + 1], verts[i + 2]))
+          in accepted_tris ++ clipped_tris
+             |> map (\(v0, v1, v2) -> (f v0, f v1, f v2))
+             |> filter (\tri -> winding_order_test c tri)
+             |> Triangle.rasterize (on_frag u)
+                                   c.depth_type
+                                   (ne_target, ne_depth)
+                                   (target_buffer, depth_buffer)
       in {target_buffer, depth_buffer, ne_target, ne_depth}
 
     def render_wireframe 'uniform 'vertex 'target [w] [h]
@@ -227,6 +269,66 @@ module CustomRenderSetup (T: TriangleRasterizerSpec) : RenderSetupSpec = \(V: Va
                             (ne_target, ne_depth)
                             (target_buffer, depth_buffer)
         case _ -> assert false (target_buffer, depth_buffer)
+      in {target_buffer, depth_buffer, ne_target, ne_depth}
+
+    def render_normals 'uniform 'target [w] [h] [v] [i]
+                       (c: render_config)
+                       (u: uniform)
+                       (d: { primitive_type: #points | #lines | #triangles
+                           , vertices: [v](f32, f32, f32)
+                           , indices: [i]i64
+                           }
+                       )
+                       (normals: [](f32, f32, f32))
+                       (normal_scale: f32)
+                       (on_vert: vertex_shader uniform V.t (f32, f32, f32))
+                       (on_frag: fragment_shader uniform V.t target)
+                       { target_buffer = target_buffer: [h][w]target
+                       , depth_buffer = depth_buffer: [h][w]f32
+                       , ne_target = ne_target: target
+                       , ne_depth = ne_depth: f32
+                       } : { target_buffer: [h][w]target
+                           , depth_buffer: [h][w]f32
+                           , ne_target: target
+                           , ne_depth: f32
+                           } =
+      let f = proj >-> map_screen_to_window c {h, w}
+      let indexed_verts = map (\i -> d.vertices[i]) d.indices
+      let normal_lines =
+        map2 (\v n ->
+                let p0 = v
+                let p1 =
+                  ( v.0 + n.0 * normal_scale
+                  , v.1 + n.1 * normal_scale
+                  , v.2 + n.2 * normal_scale
+                  )
+                in (p0, p1))
+             indexed_verts
+             (normals |> sized i)
+      let (target_buffer, depth_buffer) =
+        normal_lines
+        |> map (\(v0, v1) -> (on_vert u v0, on_vert u v1))
+        |> map (\l -> (l, test_line_bounds l))
+        |> filter ((.1) >-> (.0))
+        |> map (\( ( {pos = pos0, attr = attr0}
+                   , {pos = pos1, attr = attr1}
+                   )
+                 , (_, t0, t1)
+                 ) ->
+                  let f0' =
+                    { pos = Vec4f.lerp pos0 pos1 t0
+                    , attr = V.lerp attr0 attr1 t0
+                    }
+                  let f1' =
+                    { pos = Vec4f.lerp pos0 pos1 t1
+                    , attr = V.lerp attr0 attr1 t1
+                    }
+                  in (f0', f1'))
+        |> map (\(v0, v1) -> (f v0, f v1))
+        |> Line.rasterize (on_frag u)
+                          c.depth_type
+                          (ne_target, ne_depth)
+                          (target_buffer, depth_buffer)
       in {target_buffer, depth_buffer, ne_target, ne_depth}
   }
 

@@ -4,7 +4,7 @@ import "../../lib/github.com/diku-dk/cpprandom/random"
 
 import "../../lib/github.com/abxh/futhrast/setup"
 import "../../lib/github.com/abxh/futhrast/math/vec"
-import "../../lib/github.com/abxh/futhrast/math/quat"
+import "../../lib/github.com/abxh/futhrast/math/rotation"
 import "../../lib/github.com/abxh/futhrast/math/transform"
 
 type~ lys_state =
@@ -39,7 +39,6 @@ type~ lys_state =
                   | #dragon
                   | #lucy
                   | #armadillo
-  , render_kind: #points | #lines | #triangles
   , inner_mode: #yes | #no
   }
 
@@ -59,7 +58,6 @@ module lys_text_content = {
     ++ "o: armadillo\n"
     ++ "\n"
     ++ "0: snap into position\n"
-    ++ "1|2|3: point|line|triangle\n"
     ++ "w|a|s|d: movement\n"
     ++ "+|-: zoom\n"
     ++ "left|right: rotation\n"
@@ -177,7 +175,6 @@ module lys : lys with text_content = lys_text_content.text_content = {
        , verts_armadillo = replicate 0 (0, 0, 0)
        , colours = generate_u32 1024
        , render_model = #bunny
-       , render_kind = #triangles
        , inner_mode = #no
        }
 
@@ -185,13 +182,7 @@ module lys : lys with text_content = lys_text_content.text_content = {
     s with h = h with w = w
 
   def keydown (key: i32) (s: state) =
-    if key == SDLK_1
-    then s with render_kind = #points
-    else if key == SDLK_2
-    then s with render_kind = #lines
-    else if key == SDLK_3
-    then s with render_kind = #triangles
-    else if key == SDLK_b
+    if key == SDLK_b
     then s with render_model = #bunny
     else if key == SDLK_m
     then s with render_model = #monkey
@@ -271,9 +262,9 @@ module lys : lys with text_content = lys_text_content.text_content = {
     let aspect_ratio = f32.i64 s.w / f32.i64 s.h
     let t =
       transform.identity
-      |> (transform.*) (quat.one
-                        |> (quat.*) (quat.rotate_y s.angle)
-                        |> quat.to_mat)
+      |> (transform.*) (rotation.identity
+                        |> (rotation.*) (rotation.rotate_y s.angle)
+                        |> rotation.to_mat)
       |> (transform.*) (transform.scale s.zoom s.zoom 1)
       |> (transform.*) (transform.translate s.pos.0 s.pos.1 s.pos.2)
       |> (transform.*) (make_orthographic s.zmin s.zmax aspect_ratio #reversed_z)
@@ -310,31 +301,7 @@ module lys : lys with text_content = lys_text_content.text_content = {
     let verts =
       indices inds |> map (\i -> (s.colours[inds[i / 3] %% 1024], verts[inds[i]]))
     let inds = indices verts
-    in match s.render_kind
-       case #points ->
-         init_framebuffer {w = s.w, h = s.h} (argb.black, ne_depth)
-         |> R.render render_config
-                     s
-                     { primitive_type = #points
-                     , vertices = verts
-                     , indices = inds
-                     }
-                     on_vertex
-                     on_fragment
-         |> (.target_buffer)
-       case #lines ->
-         init_framebuffer {w = s.w, h = s.h} (argb.black, ne_depth)
-         |> R.render_wireframe render_config
-                               s
-                               { primitive_type = #triangles
-                               , vertices = verts
-                               , indices = inds
-                               }
-                               on_vertex
-                               on_fragment
-         |> (.target_buffer)
-       case #triangles ->
-         init_framebuffer {w = s.w, h = s.h} (argb.black, ne_depth)
+    in init_framebuffer {w = s.w, h = s.h} (argb.black, ne_depth)
          |> R.render render_config
                      s
                      { primitive_type = #triangles

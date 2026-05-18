@@ -22,7 +22,7 @@ def plane_dist (plane: i32) ({x, y, z, w}: vec4f.t) : f32 =
   case 1 -> w - x
   case 2 -> y + w
   case 3 -> w - y
-  case 4 -> z - clip_eps
+  case 4 -> z
   case _ -> w - z
 
 -- | check whether to cull point, depending on whether it is in NDC space
@@ -68,7 +68,7 @@ def clip_mask ({x, y, z, w}: vec4f.t) : u8 =
   | (u8.bool (x > w) << 1)
   | (u8.bool (y < -w) << 2)
   | (u8.bool (y > w) << 3)
-  | (u8.bool (z < clip_eps) << 4)
+  | (u8.bool (z < 0) << 4)
   | (u8.bool (z > w) << 5)
 
 def test_triangle_is_partially_inside 'varying
@@ -107,6 +107,7 @@ local
 -- | Sutherland-Hodgeman Algorithm
 --
 -- https://en.wikipedia.org/wiki/Sutherland%E2%80%93Hodgman_algorithm
+#[inline]
 def clip_against_plane 'varying
                        (lerp_vertex: vertex_out varying -> vertex_out varying -> f32 -> vertex_out varying)
                        (plane: i32)
@@ -126,20 +127,12 @@ def clip_against_plane 'varying
                 with verts[out.count] = b
        else if a_in && !b_in
        then let t = safe_clip_t_value fa fb
-            let intersection =
-              let v = lerp_vertex a b t
-              in if f32.abs v.pos.w < clip_eps
-                 then v with pos.w = clip_eps
-                 else v
+            let intersection = lerp_vertex a b t
             in out with count = out.count + 1
                    with verts[out.count] = intersection
        else if !a_in && b_in
        then let t = safe_clip_t_value fa fb
-            let intersection =
-              let v = lerp_vertex a b t
-              in if f32.abs v.pos.w < clip_eps
-                 then v with pos.w = clip_eps
-                 else v
+            let intersection = lerp_vertex a b t
             in out with count = out.count + 2
                    with verts[out.count] = intersection
                    with verts[out.count + 1] = b
