@@ -11,7 +11,6 @@ build:
 	./extract_obj_data ../../models/bunny.obj
 	./extract_obj_data ../../models/african_head.obj
 	./extract_obj_data ../../models/monkey.obj
-	./extract_obj_data ../../models/penger.obj
 	./extract_obj_data ../../models/dragon.obj
 	./extract_obj_data ../../models/lucy.obj
 	./extract_obj_data ../../models/armadillo.obj
@@ -28,23 +27,25 @@ run_$(1):
 	rm -f $(1).c $(1) $(1).fut.tuning
 endef
 
-run: run_point run_line run_triangle_imm_scanline run_triangle_imm_barycentric run_triangle_tiled run_triangle_hybrid
+run: run_point run_line run_wireframe run_triangle_imm_scanline run_triangle_imm_pineda run_triangle_tiled_pineda run_triangle_hybrid_pineda
 
 run_point: $(eval $(call RUN_TEMPLATE,point))
 
 run_line: $(eval $(call RUN_TEMPLATE,line))
 
+run_wireframe: $(eval $(call RUN_TEMPLATE,wireframe))
+
 run_triangle_imm_scanline: $(eval $(call RUN_TEMPLATE,triangle_imm_scanline))
 
-run_triangle_imm_barycentric: $(eval $(call RUN_TEMPLATE,triangle_imm_barycentric))
+run_triangle_imm_pineda: $(eval $(call RUN_TEMPLATE,triangle_imm_pineda))
 
-run_triangle_tiled: $(eval $(call RUN_TEMPLATE,triangle_tiled))
+run_triangle_tiled_pineda: $(eval $(call RUN_TEMPLATE,triangle_tiled_pineda))
 
-run_triangle_hybrid: $(eval $(call RUN_TEMPLATE,triangle_hybrid))
+run_triangle_hybrid_pineda: $(eval $(call RUN_TEMPLATE,triangle_hybrid_pineda))
 
 clean:
 	rm -f extract_obj_data *.in
-	rm -f *.c point line triangle_imm_scanline triangle_imm_barycentric triangle_tiled triangle_hybrid
+	rm -f *.c point line wireframe triangle_imm_scanline triangle_imm_pineda triangle_tiled_pineda triangle_hybrid_pineda
 	rm -f *.fut.tuning
 	rm -f *.json
 	rm -rf *.prof

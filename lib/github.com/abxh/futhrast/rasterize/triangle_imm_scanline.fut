@@ -1,23 +1,20 @@
 -- immediate-mode scanline triangle rasterizer
 
+-- todo: remove the rounding error workaround
+
 import "../../../diku-dk/segmented/segmented"
 
 import "../fragment"
 import "../varying"
-
+import "../utils/encode_f32"
 import "../math/vec"
 
 -- | triangle rasterizer specfication
 module type TriangleRasterizerSpec =
   (V: VaryingSpec)
   -> {
-    -- | rasterize triangle given plot function, depth type,
-    -- triangle fragments, a neutral value for the target/depth buffers and
-    -- the target/depth buffers themselves
     val rasterize 'target [n] [h] [w] :
       (plot: fragment V.t -> target)
-      -> (depth_type: #normal_z | #reversed_z)
-      -> (ne: (target, f32))
       -> ([h][w]target, [h][w]f32)
       -> [n](fragment V.t, fragment V.t, fragment V.t)
       -> ([h][w]target, [h][w]f32)
@@ -31,15 +28,17 @@ module ImmScanlineTriangleRasterizer : TriangleRasterizerSpec = \(V: VaryingSpec
     -- github.com/melsman/canvas
     -- sunshine2k.de/coding/java/TriangleRasterization/TriangleRasterization.html
 
-    local module V = VaryingExtensions V
+    local module Attr = VaryingExtensions V
     local module F32 = VaryingExtensions f32
 
     local
     type triangle = (fragment V.t, fragment V.t, fragment V.t)
 
-    def barycentric = F32.barycentric
-    def barycentric_pc = F32.barycentric_perspective_corrected_w_Z_inv_t
-    def barycentric_pc_attr = V.barycentric_perspective_corrected_w_Z_inv_t
+    def encode_depth d = encode_f32 d
+    def encode_depth_index d tri_index = (u64.u32 (encode_depth d) << 33) | (u64.i64 (tri_index + 1) & ((1 << 33) - 1))
+    def decode_depth dvis = dvis >> 33 |> u32.u64 |> decode_f32
+    def decode_index dvis = dvis & ((1 << 33) - 1) |> i64.u64 |> (i64.- 1)
+    def ne_dvis = encode_depth_index 0 (-1)
 
     def calc_signed_tri_area_2 ((v0, v1, v2): (vec2f.t, vec2f.t, vec2f.t)) : f32 =
       let v0v1 = v1 vec2f.- v0
@@ -68,18 +67,16 @@ module ImmScanlineTriangleRasterizer : TriangleRasterizerSpec = \(V: VaryingSpec
     def get_point_in_horizontal_line (tris: [](fragment V.t, fragment V.t, fragment V.t))
                                      (((pl, _), tri_index): ((vec2i32.t, vec2i32.t), i64))
                                      (i: i64) =
-      let pos = {x = 0.5 + f32.i32 pl.x + f32.i64 i, y = f32.i32 pl.y}
+      let pos = {x = 0.5 + f32.i32 pl.x + f32.i64 i, y = 0.5 + f32.i32 pl.y}
       let (f0, f1, f2) = tris[tri_index]
       let (w0, w1, w2) = calc_barycentric_coeffs_normalized (f0.pos, f1.pos, f2.pos) pos
-      -- workaround to fix rounding errors resulting in glitched pixels:
+      -- workaround to fix rounding logic errors resulting in glitched pixels:
       let w0 = f32.max 0 (f32.min 1 w0)
       let w1 = f32.max 0 (f32.min 1 w1)
       let w2 = f32.max 0 (f32.min 1 w2)
       let w = (w0, w1, w2)
-      let Z_inv = barycentric f0.Z_inv f1.Z_inv f2.Z_inv w
-      let depth = barycentric_pc Z_inv (f0.depth, f0.Z_inv) (f1.depth, f1.Z_inv) (f2.depth, f2.Z_inv) w
-      let attr = barycentric_pc_attr Z_inv (f0.attr, f0.Z_inv) (f1.attr, f1.Z_inv) (f2.attr, f2.Z_inv) w
-      in {pos, Z_inv, depth, attr}
+      let depth = F32.barycentric f0.depth f1.depth f2.depth w
+      in ((i64.i32 pl.y, i64.i32 pl.x + i), encode_depth_index depth tri_index)
 
     def sort_y_ascending ((v0, v1, v2): (vec2f.t, vec2f.t, vec2f.t)) =
       -- v0.y <= v1.y <= v2.y
@@ -121,55 +118,62 @@ module ImmScanlineTriangleRasterizer : TriangleRasterizerSpec = \(V: VaryingSpec
               let sl0 = dxdy v0 v1
               let sl1 = dxdy v0 v2
               let dy = y - v0.y
-              let p0 = {x = v0.x + i32.f32 (f32.round (sl0 * f32.i32 dy)), y}
-              let p1 = {x = v0.x + i32.f32 (f32.round (sl1 * f32.i32 dy)), y}
-              let (pl, pr) = if p0.x <= p1.x then (p0, p1) else (p1, p0)
-              in ((pl, pr), tri_index)
+              let p0x = v0.x + i32.f32 (f32.floor (sl0 * f32.i32 dy + 0.5))
+              let p1x = v0.x + i32.f32 (f32.floor (sl1 * f32.i32 dy + 0.5))
+              let plx = i32.min p0x p1x
+              let prx = i32.max p0x p1x
+              in (({x = plx, y}, {x = prx, y}), tri_index)
          else -- lower half
               let sl0 = dxdy v1 v2
               let sl1 = dxdy v0 v2
               let dy = y - v1.y
-              let p0 = {x = v1.x + i32.f32 (f32.round (sl0 * f32.i32 dy)), y}
-              let p1 = {x = v0.x + i32.f32 (f32.round (sl1 * f32.i64 i)), y}
-              let (pl, pr) = if p0.x <= p1.x then (p0, p1) else (p1, p0)
-              in ((pl, pr), tri_index)
-
-    def unpack_fragment (f: fragment V.t) =
-      let y = i64.f32 f.pos.y
-      let x = i64.f32 f.pos.x
-      in ((y, x), f, f.depth)
+              let p0x = v1.x + i32.f32 (f32.floor (sl0 * f32.i32 dy + 0.5))
+              let p1x = v0.x + i32.f32 (f32.floor (sl1 * f32.i64 i + 0.5))
+              let plx = i32.min p0x p1x
+              let prx = i32.max p0x p1x
+              in (({x = plx, y}, {x = prx, y}), tri_index)
 
     def rasterize 'target [n] [h] [w]
                   (plot: (fragment V.t -> target))
-                  (depth_type: #normal_z | #reversed_z)
-                  ((ne_target, ne_depth): (target, f32))
                   ((target_buffer, depth_buffer): ([h][w]target, [h][w]f32))
                   (tris: [n](fragment V.t, fragment V.t, fragment V.t)) : ([h][w]target, [h][w]f32) =
-      let depth_select lhs rhs =
-        if depth_type == #reversed_z
-        then f32.max lhs rhs
-        else f32.min lhs rhs
-      let tris =
-        tris
-        |> map ensure_cclockwise_winding_order
-      let (is, frag_values, depth_values) =
+      let ne_target = copy target_buffer[0, 0]
+      let dvis_buffer = map (map (\v -> encode_depth_index v (-1))) depth_buffer
+      let tris = (assert (n < (1 << 33) - 1) tris) |> map ensure_cclockwise_winding_order
+      let (is, xs) =
         zip tris (indices tris)
         |> expand num_lines_in_triangle get_line_in_triangle
         |> expand get_horizontal_line_size (get_point_in_horizontal_line tris)
-        |> map unpack_fragment
-        |> unzip3
-      let depth_buffer = reduce_by_index_2d (copy depth_buffer) depth_select ne_depth is depth_values
-      let (is, target_values) =
-        zip is frag_values
-        |> map (\((y, x), f) ->
-                  if (0 <= x && x < w) && (0 <= y && y < h) && depth_buffer[y, x] == f.depth
-                  then ((y, x), plot f)
-                  else ((-1, -1), ne_target))
-        |> unzip2
-      let target_buffer = scatter_2d (copy target_buffer) is target_values
-      in (target_buffer, depth_buffer)
+        |> unzip
+      let dvis_buffer = reduce_by_index_2d dvis_buffer u64.max ne_dvis is xs
+      let (is, xs) =
+        dvis_buffer
+        |> flatten
+        |> zip (iota (h * w))
+        |> map (\(i, v) ->
+                  let depth = decode_depth v
+                  let tri_index = decode_index v
+                  in if tri_index == -1
+                     then (-1, (ne_target, 0))
+                     else let x = i %% w
+                          let y = i / w
+                          let pos = {x = 0.5 + f32.i64 x, y = 0.5 + f32.i64 y}
+                          let (f0, f1, f2) = tris[tri_index]
+                          let (w0, w1, w2) = calc_barycentric_coeffs_normalized (f0.pos, f1.pos, f2.pos) pos
+                          let w0 = f32.max 0 (f32.min 1 w0)
+                          let w1 = f32.max 0 (f32.min 1 w1)
+                          let w2 = f32.max 0 (f32.min 1 w2)
+                          let W = (w0, w1, w2)
+                          let Z_inv = F32.barycentric f0.Z_inv f1.Z_inv f2.Z_inv W
+                          let attr = Attr.barycentric_pc_w_Zinv Z_inv (f0.attr, f0.Z_inv) (f1.attr, f1.Z_inv) (f2.attr, f2.Z_inv) W
+                          in (y * w + x, (plot {pos, Z_inv, depth, attr}, depth)))
+        |> unzip
+      let dest = zip (flatten target_buffer) (flatten depth_buffer)
+      let (target_buf, depth_buf) = scatter dest is xs |> unzip
+      in (unflatten target_buf, unflatten depth_buf)
   }
 
+local
 -- | immediate-mode scanline triangle rasterizer for testing purposes. can use the REPL for this
 module ImmScanlineTriangleRasterizerTest = {
   local
@@ -184,7 +188,7 @@ module ImmScanlineTriangleRasterizerTest = {
 
   local module M = ImmScanlineTriangleRasterizer (V)
 
-  def rasterize_triangle_imm_test [n] (h: i64) (w: i64) (vs: [n]((f32, f32), (f32, f32), (f32, f32))) : [h][w]i32 =
+  def test_rasterize_triangle_imm_scanline [n] (h: i64) (w: i64) (vs: [n]((f32, f32), (f32, f32), (f32, f32))) : [h][w]i32 =
     let target_buffer = replicate h (replicate w false)
     let depth_buffer = replicate h (replicate w (-f32.inf))
     let frags =
@@ -195,7 +199,7 @@ module ImmScanlineTriangleRasterizerTest = {
                 , {pos = {x = f2.0, y = f2.1}, depth = 1, Z_inv = 1, attr = true}
                 ))
     let plot = (\(f: fragment bool) -> f.attr)
-    in M.rasterize plot #reversed_z (false, -f32.inf) (target_buffer, depth_buffer) frags
+    in M.rasterize plot (target_buffer, depth_buffer) frags
        |> (.0)
        |> map (map i32.bool)
 }

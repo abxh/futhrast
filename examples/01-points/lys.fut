@@ -1,7 +1,5 @@
 import "../lib/github.com/abxh/lys/lys"
 
-import "../../lib/github.com/diku-dk/cpprandom/random"
-
 import "../../lib/github.com/abxh/futhrast/setup"
 import "../../lib/github.com/abxh/futhrast/math/vec"
 import "../../lib/github.com/abxh/futhrast/math/rotation"
@@ -17,29 +15,27 @@ type~ lys_state =
   , angle_delta: f32
   , zmax: f32
   , zmin: f32
+  , model_zmin: f32
+  , model_zmax: f32
   , verts_armadillo: [](f32, f32, f32)
   , verts_bunny: [](f32, f32, f32)
   , verts_monkey: [](f32, f32, f32)
   , verts_head: [](f32, f32, f32)
-  , verts_penger: [](f32, f32, f32)
   , verts_dragon: [](f32, f32, f32)
   , verts_lucy: [](f32, f32, f32)
+  , inds_armadillo: []i64
   , inds_bunny: []i64
   , inds_monkey: []i64
   , inds_head: []i64
-  , inds_penger: []i64
   , inds_dragon: []i64
   , inds_lucy: []i64
-  , inds_armadillo: []i64
-  , colours: []u32
   , render_model:   #bunny
                   | #monkey
                   | #head
-                  | #penger
                   | #dragon
                   | #lucy
                   | #armadillo
-  , inner_mode: #yes | #no
+  , inner_mode: bool
   }
 
 module lys_text_content = {
@@ -52,16 +48,15 @@ module lys_text_content = {
     ++ "b: bunny\n"
     ++ "m: monkey\n"
     ++ "h: african head\n"
-    ++ "p: penger\n"
     ++ "r: dragon\n"
     ++ "l: lucy\n"
     ++ "o: armadillo\n"
     ++ "\n"
     ++ "0: snap into position\n"
     ++ "w|a|s|d: movement\n"
+    ++ "i: inner mode\n"
     ++ "+|-: zoom\n"
     ++ "left|right: rotation\n"
-    ++ "i: see inner/outer\n"
 
   def text_content (render_duration: f32) (s: lys_state) : text_content =
     let num_triangles =
@@ -69,7 +64,6 @@ module lys_text_content = {
       case #bunny -> length s.inds_bunny / 3
       case #monkey -> length s.inds_monkey / 3
       case #head -> length s.inds_head / 3
-      case #penger -> length s.inds_penger / 3
       case #dragon -> length s.inds_dragon / 3
       case #lucy -> length s.inds_lucy / 3
       case #armadillo -> length s.inds_armadillo / 3
@@ -84,7 +78,6 @@ module lys_file = {
     ++ "../../models/bunny.obj,"
     ++ "../../models/monkey.obj,"
     ++ "../../models/african_head.obj,"
-    ++ "../../models/penger.obj,"
     ++ "../../models/dragon.obj,"
     ++ "../../models/lucy.obj,"
     ++ "../../models/armadillo.obj,"
@@ -100,12 +93,10 @@ module lys_file = {
     case 2 ->
       s with inds_head = is
     case 3 ->
-      s with inds_penger = is
-    case 4 ->
       s with inds_dragon = is
-    case 5 ->
+    case 4 ->
       s with inds_lucy = is
-    case 6 ->
+    case 5 ->
       s with inds_armadillo = is
     case _ ->
       s
@@ -119,12 +110,10 @@ module lys_file = {
     case 2 ->
       s with verts_head = vs
     case 3 ->
-      s with verts_penger = vs
-    case 4 ->
       s with verts_dragon = vs
-    case 5 ->
+    case 4 ->
       s with verts_lucy = vs
-    case 6 ->
+    case 5 ->
       s with verts_armadillo = vs
     case _ ->
       s
@@ -139,44 +128,35 @@ module lys : lys with text_content = lys_text_content.text_content = {
 
   type~ state = lys_state
 
-  module dist = uniform_int_distribution u32 u64 xorshift128plus
-
   def grab_mouse = false
 
-  def init (seed: u32) (h: i64) (w: i64) : state =
-    let generate_u32 (n: i64) =
-      (loop (rng, out) = (xorshift128plus.rng_from_seed [i32.u32 seed], replicate n 0)
-       for i < n do
-         let (rng', x) = dist.rand (u32.lowest, u32.highest) rng
-         in (rng', out with [i] = x))
-      |> (.1)
-    in { w
-       , h
-       , zoom = 1
-       , zmin = 0
-       , zmax = 0
-       , pos = (0, 0, 0)
-       , pos_delta = (0, 0, 0)
-       , angle = 0
-       , angle_delta = 0
-       , inds_bunny = replicate 0 (-1)
-       , inds_monkey = replicate 0 (-1)
-       , inds_head = replicate 0 (-1)
-       , inds_penger = replicate 0 (-1)
-       , inds_dragon = replicate 0 (-1)
-       , inds_lucy = replicate 0 (-1)
-       , inds_armadillo = replicate 0 (-1)
-       , verts_bunny = replicate 0 (0, 0, 0)
-       , verts_monkey = replicate 0 (0, 0, 0)
-       , verts_head = replicate 0 (0, 0, 0)
-       , verts_penger = replicate 0 (0, 0, 0)
-       , verts_dragon = replicate 0 (0, 0, 0)
-       , verts_lucy = replicate 0 (0, 0, 0)
-       , verts_armadillo = replicate 0 (0, 0, 0)
-       , colours = generate_u32 1024
-       , render_model = #bunny
-       , inner_mode = #no
-       }
+  def init (_: u32) (h: i64) (w: i64) : state =
+    { w
+    , h
+    , zoom = 1
+    , zmin = 0.001
+    , zmax = 10
+    , model_zmin = 0
+    , model_zmax = 1
+    , pos = (0, 0, 0)
+    , pos_delta = (0, 0, 0)
+    , angle = 0
+    , angle_delta = 0
+    , inds_armadillo = replicate 0 (-1)
+    , inds_bunny = replicate 0 (-1)
+    , inds_monkey = replicate 0 (-1)
+    , inds_head = replicate 0 (-1)
+    , inds_dragon = replicate 0 (-1)
+    , inds_lucy = replicate 0 (-1)
+    , verts_armadillo = replicate 0 (0, 0, 0)
+    , verts_bunny = replicate 0 (0, 0, 0)
+    , verts_monkey = replicate 0 (0, 0, 0)
+    , verts_head = replicate 0 (0, 0, 0)
+    , verts_dragon = replicate 0 (0, 0, 0)
+    , verts_lucy = replicate 0 (0, 0, 0)
+    , render_model = #bunny
+    , inner_mode = false
+    }
 
   def resize (h: i64) (w: i64) (s: state) =
     s with h = h with w = w
@@ -188,18 +168,12 @@ module lys : lys with text_content = lys_text_content.text_content = {
     then s with render_model = #monkey
     else if key == SDLK_h
     then s with render_model = #head
-    else if key == SDLK_p
-    then s with render_model = #penger
     else if key == SDLK_r
     then s with render_model = #dragon
     else if key == SDLK_l
     then s with render_model = #lucy
     else if key == SDLK_o
     then s with render_model = #armadillo
-    else if key == SDLK_i
-    then s with inner_mode = match s.inner_mode
-           case #no -> #yes
-           case #yes -> #no
     else if key == SDLK_a
     then s with pos_delta.0 = -1
     else if key == SDLK_d
@@ -220,6 +194,8 @@ module lys : lys with text_content = lys_text_content.text_content = {
     then s with pos = (0, 0, 0)
            with zoom = 1
            with angle = 0
+    else if key == SDLK_i
+    then s with inner_mode = !s.inner_mode
     else s
 
   def keyup (key: i32) (s: state) =
@@ -258,57 +234,55 @@ module lys : lys with text_content = lys_text_content.text_content = {
   local module R = RenderSetup Varying
 
   local
-  def on_vertex (s: state) (v: (u32, (f32, f32, f32))) : vertex_out Varying.t =
+  def on_vertex (s: state) (v: (f32, f32, f32)) : vertex_out Varying.t =
     let aspect_ratio = f32.i64 s.w / f32.i64 s.h
-    let t =
+    let model =
+      transform.identity
+      |> (transform.*) (transform.reflect_z)
+    let view =
       transform.identity
       |> (transform.*) (rotation.identity
                         |> (rotation.*) (rotation.rotate_y s.angle)
                         |> rotation.to_mat)
       |> (transform.*) (transform.scale s.zoom s.zoom 1)
-      |> (transform.*) (transform.translate s.pos.0 s.pos.1 s.pos.2)
-      |> (transform.*) (make_orthographic s.zmin s.zmax aspect_ratio #reversed_z)
-    let vert = vec3f.from_tuple v.1
-    let pos = transform.apply_to_pos vert t
-    in {pos, attr = v.0}
+      |> (transform.*) (transform.translate_tup s.pos)
+    let proj =
+      transform.identity
+      |> (transform.*) (make_orthographic s.zmin s.zmax aspect_ratio)
+    let mvp =
+      model
+      |> (transform.*) view
+      |> (transform.*) proj
+    let v = vec3f.from_tuple v
+    let pos = transform.apply v mvp
+    in { pos
+       , attr = argb.scale argb.white ((pos.z / pos.w) ** 3)
+       }
 
   local
   def on_fragment (_: state) (f: fragment Varying.t) : argb.colour =
     f.attr
 
   def render (s: state) : [][]argb.colour =
-    let render_config: render_config =
-      { triangle_winding_order =
-          match s.inner_mode
-          case #no -> #counterclockwise
-          case #yes -> #clockwise
-      , depth_type = #reversed_z
-      , flip_y = true
-      }
-    let ne_depth = if render_config.depth_type == #reversed_z then f32.lowest else f32.highest
+    let render_config: render_config = {triangle_winding_order = if s.inner_mode then #counterclockwise else #clockwise}
     let (verts, inds) =
       match s.render_model
       case #bunny -> (s.verts_bunny, s.inds_bunny)
       case #monkey -> (s.verts_monkey, s.inds_monkey)
       case #head -> (s.verts_head, s.inds_head)
-      case #penger -> (s.verts_penger, s.inds_penger)
       case #dragon -> (s.verts_dragon, s.inds_dragon)
       case #lucy -> (s.verts_lucy, s.inds_lucy)
       case #armadillo -> (s.verts_armadillo, s.inds_armadillo)
     let s =
-      s with zmin = reduce f32.min f32.highest (map (.2) verts)
-        with zmax = reduce f32.max f32.lowest (map (.2) verts) + 1
-    let verts =
-      indices inds |> map (\i -> (s.colours[inds[i / 3] %% 1024], verts[inds[i]]))
-    let inds = indices verts
-    in init_framebuffer {w = s.w, h = s.h} (argb.black, ne_depth)
-         |> R.render render_config
-                     s
-                     { primitive_type = #triangles
-                     , vertices = verts
-                     , indices = inds
-                     }
-                     on_vertex
-                     on_fragment
-         |> (.target_buffer)
+      s with pos.2 = s.zmin + (f32.abs (reduce f32.max f32.lowest (map (.2) verts) - reduce f32.min f32.highest (map (.2) verts)))
+    in (tabulate_2d s.h s.w (const (const (argb.black))), tabulate_2d s.h s.w (const (const f32.lowest)))
+       |> R.render render_config
+                   s
+                   { primitive_type = #points
+                   , vertices = verts
+                   , indices = inds
+                   }
+                   on_vertex
+                   on_fragment
+       |> (.0)
 }

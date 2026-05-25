@@ -1,46 +1,45 @@
 -- | misc constants and transformation matrices
-
-type vec2f = {x: f32, y: f32}
-type vec3f = {x: f32, y: f32, z: f32}
+--
+-- NDC bounds : -1 <= x <= 1, -1 <= y <= 1, 0 <= depth(z) <= 1, where depth(z_far) = 0, depth(z_far) = 1.
+-- Screen bounds: -1 <= x <= 1, -1 <= y <= 1
 
 -- | right axis
-def right : vec3f = {x = 1, y = 0, z = 0}
+def right = {x = -1f32, y = 0f32, z = 0f32}
 
 -- | up axis
-def up : vec3f = {x = 0, y = 1, z = 0}
+def up = {x = 0f32, y = 1f32, z = 0f32}
 
 -- | forward axis
-def forward : vec3f = {x = 0, y = 0, z = 1}
+def forward = {x = 0f32, y = 0f32, z = 1f32}
 
--- | bounds for NDC (Normalized Device Coordinates)
--- This the bounding box, vertex positions are to be mapped to,
--- before vertices outside of it are clipped / culled.
-def ndc_bounds : {min: vec3f, max: vec3f} =
-  {min = {x = (-1), y = (-1), z = 0}, max = {x = 1, y = 1, z = 1}}
+-- | compute the orthographic depth (for shading purposes)
+def depth_orthographic (near: f32) (far: f32) (z: f32) =
+  let a = -1 / (far - near)
+  let b = far / (far - near)
+  in a * z + b
 
--- | screen boundaries
-def screen_bounds : {min: vec2f, max: vec2f} =
-  {min = {x = (-1), y = (-1)}, max = {x = 1, y = 1}}
+-- | compute the perspective depth (for shading purposes)
+def depth_perspective (near: f32) (far: f32) (z: f32) =
+  let a = -near / (far - near)
+  let b = (near * far) / (far - near)
+  in a + b / z
+
+-- | compute the perspective depth with infinite far-plane (for shading purposes)
+def depth_perspective_inf (near: f32) (z: f32) =
+  let b = near
+  in 0 + b / z
 
 -- | make orthographic matrix, mapping to NDC space
 def make_orthographic (near: f32)
                       (far: f32)
-                      (aspect_ratio: f32)
-                      (depth_type: #normal_z | #reversed_z) : [4][4]f32 =
-  let inv = 1f32 / (far - near)
-  let sx = 1f32 / aspect_ratio
-  let sy = 1f32
-  let sz =
-    match depth_type
-    case #normal_z -> inv
-    case #reversed_z -> -inv
-  let tz =
-    match depth_type
-    case #normal_z -> far * inv
-    case #reversed_z -> -near * inv
-  in [ [sx, 0, 0, 0]
-     , [0, sy, 0, 0]
-     , [0, 0, sz, tz]
+                      (aspect_ratio: f32) : [4][4]f32 =
+  let near = assert (near > 0) near
+  let far = assert (far > near) far
+  let a = -1 / (far - near)
+  let b = far / (far - near)
+  in [ [1 / aspect_ratio, 0, 0, 0]
+     , [0, 1, 0, 0]
+     , [0, 0, a, b]
      , [0, 0, 0, 1]
      ]
 
@@ -48,21 +47,27 @@ def make_orthographic (near: f32)
 def make_perspective (near: f32)
                      (far: f32)
                      (fovy_rad: f32)
-                     (aspect_ratio: f32)
-                     (depth_type: #normal_z | #reversed_z) : [4][4]f32 =
-  let tan_half_fov = f32.tan (fovy_rad / 2f32)
-  let sx = tan_half_fov * aspect_ratio
-  let sy = tan_half_fov
-  let a =
-    match depth_type
-    case #normal_z -> -near / (far - near)
-    case #reversed_z -> near / (far - near)
-  let b =
-    match depth_type
-    case #normal_z -> -far * a
-    case #reversed_z -> -far * a
-  in [ [1 / sx, 0, 0, 0]
-     , [0, 1 / sy, 0, 0]
+                     (aspect_ratio: f32) : [4][4]f32 =
+  let near = assert (near > 0) near
+  let far = assert (far > near) far
+  let c = f32.tan (fovy_rad / 2)
+  let a = -near / (far - near)
+  let b = (near * far) / (far - near)
+  in [ [1 / (c * aspect_ratio), 0, 0, 0]
+     , [0, 1 / c, 0, 0]
      , [0, 0, a, b]
+     , [0, 0, 1, 0]
+     ]
+
+-- | make perspective matrix with infinite far plane, mapping to NDC space
+def make_perspective_inf (near: f32)
+                         (fovy_rad: f32)
+                         (aspect_ratio: f32) : [4][4]f32 =
+  let near = assert (near > 0) near
+  let c = f32.tan (fovy_rad / 2)
+  let b = near
+  in [ [1 / (c * aspect_ratio), 0, 0, 0]
+     , [0, 1 / c, 0, 0]
+     , [0, 0, 0, b]
      , [0, 0, 1, 0]
      ]

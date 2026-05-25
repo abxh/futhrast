@@ -1,4 +1,4 @@
--- tiled-hybrid triangle rasterizer
+-- tiled triangle rasterizer
 -- assumes non-zero triangle area
 
 import "../../../diku-dk/segmented/segmented"
@@ -18,46 +18,38 @@ import "../math/fixedpoint"
 module type TriangleRasterizerSpec =
   (V: VaryingSpec)
   -> {
-    -- | rasterize triangle given plot function, depth type,
-    -- triangle fragments, a neutral value for the target/depth buffers and
-    -- the target/depth buffers themselves
+    -- | rasterize triangle given plot function, triangle fragments, and the target/depth buffers themselves
     val rasterize 'target [n] [h] [w] :
       (plot: fragment V.t -> target)
-      -> (depth_type: #normal_z | #reversed_z)
-      -> (ne: (target, f32))
       -> ([h][w]target, [h][w]f32)
       -> [n](fragment V.t, fragment V.t, fragment V.t)
       -> ([h][w]target, [h][w]f32)
   }
 
-module type HybridTriangleRasterizerOptions = {
+module type TiledPinedaTriangleRasterizerOptions = {
   module coarse_mask: bitmask
-  module small_triangle_mask: bitmask
   module bin_pattern: index_pattern
   module coarse_pattern: index_pattern
 
   val bin_shift : i64
   val fine_shift : i64
   val num_intrablocks_shift : i64
-  val small_triangle_size_shift : i64
 }
 
-module HybridTriangleRasterizerDefaultOptions : HybridTriangleRasterizerOptions = {
+module TiledPinedaTriangleRasterizerDefaultOptions : TiledPinedaTriangleRasterizerOptions = {
   module coarse_mask = bitmask_64
-  module small_triangle_mask = bitmask_128
   module bin_pattern = morton_u16_pattern
   module coarse_pattern = morton_u16_pattern
 
   def bin_shift : i64 = 7
   def fine_shift : i64 = 4
   def num_intrablocks_shift : i64 = 8
-  def small_triangle_size_shift : i64 = 7
 }
 
--- | tiled-hybrid triangle rasterizer
-module HybridTriangleRasterizer (O: HybridTriangleRasterizerOptions) : TriangleRasterizerSpec = \(V: VaryingSpec) ->
+-- | tiled triangle rasterizer
+module CustomTiledPinedaTriangleRasterizer (O: TiledPinedaTriangleRasterizerOptions) : TriangleRasterizerSpec = \(V: VaryingSpec) ->
   {
-    local module V = VaryingExtensions V
+    local module Attr = VaryingExtensions V
     local module F32 = VaryingExtensions f32
 
     local
@@ -78,11 +70,12 @@ module HybridTriangleRasterizer (O: HybridTriangleRasterizerOptions) : TriangleR
     local def fine_size : i64 = 1 << fine_shift
     local def coarse_size : i64 = 1 << coarse_shift
     local def num_intrablocks : i64 = 1 << num_intrablocks_shift
-    local def small_triangle_size : i64 = 1 << small_triangle_size_shift
 
-    def barycentric = F32.barycentric
-    def barycentric_pc = F32.barycentric_perspective_corrected_w_Z_inv_t
-    def barycentric_pc_attr = V.barycentric_perspective_corrected_w_Z_inv_t
+    def encode_depth d = encode_f32 d
+    def encode_depth_index d tri_index = (u64.u32 (encode_depth d) << 33) | (u64.i64 (tri_index + 1) & ((1 << 33) - 1))
+    def decode_depth dvis = dvis >> 33 |> u32.u64 |> decode_f32
+    def decode_index dvis = dvis & ((1 << 33) - 1) |> i64.u64 |> (i64.- 1)
+    def ne_dvis = encode_depth_index 0 (-1)
 
     local
     module wcoeffs = {
@@ -196,9 +189,9 @@ module HybridTriangleRasterizer (O: HybridTriangleRasterizerOptions) : TriangleR
                          tile_index_setup
                          {h = h: i64, w = w: i64}
                          (tris: []triangle)
-                         ((bin_idxs, tri_idxs): ([n]u16, [n]u32)) =
+                         ((bin_idxs, tri_idxs): ([n]u16, [n]i64)) =
       let f (bin_index, tri_index) =
-        let (f0, f1, f2) = tris[i64.u32 tri_index]
+        let (f0, f1, f2) = tris[tri_index]
         let tri_bbox = calc_tri_bbox (f0, f1, f2)
         let (bin_y, bin_x) = bin_pattern.unflatten bin_index_setup (i64.u16 bin_index)
         let bin_xmin = bin_x << bin_shift
@@ -229,17 +222,14 @@ module HybridTriangleRasterizer (O: HybridTriangleRasterizerOptions) : TriangleR
          |> map f
          |> zip (iota n)
          |> expand sz get
+         |> unzip
 
     def bin_rasterize [n]
                       bin_index_setup
                       {h = h: i64, w = w: i64}
-                      (tri_idxs: [n]u32)
                       (tris: [n]triangle) =
-      let small_triangle_size =
-        assert (small_triangle_size == small_triangle_mask.num_bits)
-        small_triangle_size
       let f tri_index =
-        let tri_bbox = calc_tri_bbox tris[i64.u32 tri_index]
+        let tri_bbox = calc_tri_bbox tris[tri_index]
         let tri_bbox' =
           let xmin = (tri_bbox.xmin `i64.max` 0)
           let ymin = (tri_bbox.ymin `i64.max` 0)
@@ -266,91 +256,34 @@ module HybridTriangleRasterizer (O: HybridTriangleRasterizerOptions) : TriangleR
         let x = bbox.xmin + dx
         let y = bbox.ymin + dy
         in (u16.i64 <| bin_pattern.flatten bin_index_setup (y, x), tri_index)
-      let (small_partition, other_partition) =
-        tri_idxs
-        |> map f
-        |> partition (\(_, bbox) ->
-                        let bbox_h = bbox.ymax - bbox.ymin
-                        let bbox_w = bbox.xmax - bbox.xmin
-                        in (bbox_h `i64.max` 0) * (bbox_w `i64.max` 0) <= small_triangle_size)
-      in ( small_partition
-         , other_partition
-           |> map g
-           |> expand sz get
-           |> unzip
-         )
-
-    def rasterize_small_triangles 'target [h] [w]
-                                  (depth_type: #normal_z | #reversed_z)
-                                  (ne_depth: f32)
-                                  (dvis_buffer: *[h][w]u64)
-                                  tri_infos
-                                  (pairings: [](u32, bbox i64)) =
-      let encode_depth d = (encode_f32 d) ^ (u32.bool (depth_type == #reversed_z) * u32.highest)
-      let encode_depth_index d tri_index = (u64.u32 (encode_depth d) << 32) | u64.u32 tri_index
-      let ne_dvis = encode_depth_index ne_depth u32.highest
-      let f (tri_index, bbox: bbox i64) =
-        let bbox_h = bbox.ymax - bbox.ymin
-        let bbox_w = bbox.xmax - bbox.xmin
-        let bbox_size = (bbox_h `i64.max` 0) * (bbox_w `i64.max` 0)
-        let {tri = _, wzero, wdelta, wbias, inv_area_2 = _} = tri_infos[i64.u32 tri_index]
-        let wdelta: {x: vec3fp.t, y: vec3fp.t} = wdelta
-        let g bbox_index =
-          let bbox_x = bbox_index %% bbox_w
-          let bbox_y = bbox_index / bbox_w
-          let x = (fixedpoint.f32 0.5) fixedpoint.+ fixedpoint.i64 (bbox_x + bbox.xmin)
-          let y = (fixedpoint.f32 0.5) fixedpoint.+ fixedpoint.i64 (bbox_y + bbox.ymin)
-          let w = wzero vec3fp.+ wbias vec3fp.+ (x vec3fp.* wdelta.x) vec3fp.+ (y vec3fp.* wdelta.y)
-          in w.x fixedpoint.>= (fixedpoint.i64 0)
-             && w.y fixedpoint.>= (fixedpoint.i64 0)
-             && w.z fixedpoint.>= (fixedpoint.i64 0)
-        let mask =
-          loop b = small_triangle_mask.empty
-          for pos in 0..<bbox_size do
-            small_triangle_mask.set b pos (g pos)
-        in (bbox, tri_index, mask)
-      let sz ((_, _, mask)) = small_triangle_mask.size mask
-      let get ((bbox, tri_index, mask)) set_bbox_index =
-        let bbox_w = bbox.xmax - bbox.xmin
-        let bbox_index = small_triangle_mask.find_ith_set_bit mask set_bbox_index
-        let bbox_x = bbox_index %% bbox_w
-        let bbox_y = bbox_index / bbox_w
-        let x = bbox_x + bbox.xmin
-        let y = bbox_y + bbox.ymin
-        let {tri = (f0, f1, f2), wzero, wdelta, wbias = _, inv_area_2} = tri_infos[i64.u32 tri_index]
-        let (f0, f1, f2): triangle = (f0, f1, f2)
-        let wzero = {x = wzero.x, y = wzero.y}
-        let wdelta_x = {x = wdelta.x.x, y = wdelta.x.y}
-        let wdelta_y = {x = wdelta.y.x, y = wdelta.y.y}
-        let (w0, w1) =
-          wzero
-          vec2fp.+ (((fixedpoint.f32 0.5) fixedpoint.+ fixedpoint.i64 x) vec2fp.* wdelta_x)
-          vec2fp.+ (((fixedpoint.f32 0.5) fixedpoint.+ fixedpoint.i64 y) vec2fp.* wdelta_y)
-          |> vec2fp.map fixedpoint.to_f32
-          |> (inv_area_2 vec2f.*)
-          |> vec2f.to_tuple
-        let w = (w0, w1, 1 - w0 - w1)
-        let Z_inv = barycentric f0.Z_inv f1.Z_inv f2.Z_inv w
-        let depth = barycentric_pc Z_inv (f0.depth, f0.Z_inv) (f1.depth, f1.Z_inv) (f2.depth, f2.Z_inv) w
-        in ((y, x), encode_depth_index depth tri_index)
-      let (is, xs) =
-        pairings
-        |> map f
-        |> expand sz get
-        |> unzip
-      in reduce_by_index_2d dvis_buffer u64.min ne_dvis is xs
+      in indices tris
+         |> map (f >-> g)
+         |> expand sz get
+         |> unzip
 
     def rasterize_tiled [n] 'target [h] [w]
                         bin_index_setup
                         tile_index_setup
-                        (depth_type: #normal_z | #reversed_z)
-                        (ne_depth: f32)
-                        (dvis_buffer: [h][w]u64)
-                        tri_infos
-                        ((tile_ids, tri_idxs): ([n]u32, [n]u32)) =
-      let encode_depth d = (encode_f32 d) ^ (u32.bool (depth_type == #reversed_z) * u32.highest)
-      let encode_depth_index d tri_index = (u64.u32 (encode_depth d) << 32) | u64.u32 tri_index
-      let ne_dvis = encode_depth_index ne_depth u32.highest
+                        (plot: (fragment V.t -> target))
+                        ((target_buffer, depth_buffer): (*[h][w]target, *[h][w]f32))
+                        (tris: []triangle)
+                        ((tile_ids, tri_idxs): ([n]u32, [n]i64)) =
+      let ne_target = copy target_buffer[0, 0]
+      let dvis_buffer = map (map (\v -> encode_depth_index v (-1))) depth_buffer
+      let tri_infos =
+        tris
+        |> map (\(f0, f1, f2) ->
+                  let verts = (f0.pos, f1.pos, f2.pos)
+                  let inv_area_2 = 1 / calc_signed_tri_area_2 verts
+                  let verts_fp =
+                    ( vec2f.map fixedpoint.f32 f0.pos
+                    , vec2f.map fixedpoint.f32 f1.pos
+                    , vec2f.map fixedpoint.f32 f2.pos
+                    )
+                  let wzero = calc_wcoeffs_fp verts_fp {x = fixedpoint.i64 0, y = fixedpoint.i64 0}
+                  let wdelta = calc_wdelta_fp verts_fp
+                  let wbias = calc_tri_edge_bias verts_fp
+                  in {tri = (f0, f1, f2), wzero, wdelta, wbias, inv_area_2})
       let tile_flags = calc_segment_flags tile_ids
       let (unique_tile_ids, unique_tile_counts) =
         segmented_reduce (\(i0, s0) (i1, s1) -> (i0 `u32.min` i1, s0 + s1))
@@ -371,20 +304,18 @@ module HybridTriangleRasterizer (O: HybridTriangleRasterizerOptions) : TriangleR
         let (tile_y, tile_x) = coarse_pattern.unflatten tile_index_setup tile_index
         let tile_xmin = (tile_x << fine_shift) + bin_xmin
         let tile_ymin = (tile_y << fine_shift) + bin_ymin
-        let g pixel_index =
+        let f pixel_index =
           let pixel_x = pixel_index & (fine_size - 1)
           let pixel_y = pixel_index >> fine_shift
           let x = pixel_x + tile_xmin
           let y = pixel_y + tile_ymin
           in if x < w && y < h then dvis_buffer[y, x] else ne_dvis
         let tile_size = fine_size * fine_size
-        in loop tile_buf = tabulate tile_size g
+        in loop tile_buf = tabulate tile_size f
            for i < tri_count do
              let tri_index = tri_idxs[tri_offset + i]
-             let {tri = (f0, f1, f2), wzero, wdelta, wbias, inv_area_2} = tri_infos[i64.u32 tri_index]
-             let wdelta: {x: vec3fp.t, y: vec3fp.t} = wdelta
-             let (f0, f1, f2): triangle = (f0, f1, f2)
-             let h j =
+             let {tri = (f0, f1, f2), wzero, wdelta, wbias, inv_area_2} = tri_infos[tri_index]
+             let g j =
                let pixel_x = j & (fine_size - 1)
                let pixel_y = j >> fine_shift
                let x = (fixedpoint.f32 0.5) fixedpoint.+ fixedpoint.i64 (pixel_x + tile_xmin)
@@ -403,11 +334,10 @@ module HybridTriangleRasterizer (O: HybridTriangleRasterizerOptions) : TriangleR
                          |> (inv_area_2 vec2f.*)
                          |> vec2f.to_tuple
                        let w = (w0, w1, 1 - w0 - w1)
-                       let Z_inv = barycentric f0.Z_inv f1.Z_inv f2.Z_inv w
-                       let depth = barycentric_pc Z_inv (f0.depth, f0.Z_inv) (f1.depth, f1.Z_inv) (f2.depth, f2.Z_inv) w
+                       let depth = F32.barycentric f0.depth f1.depth f2.depth w
                        in encode_depth_index depth tri_index
                   else ne_dvis
-             in map2 u64.min (tabulate tile_size h) tile_buf
+             in map2 u64.max (tabulate tile_size g) tile_buf
       let g i =
         let tile_id = unique_tile_ids[i >> (2 * fine_shift)]
         let pixel_index = i & (fine_size * fine_size - 1)
@@ -424,98 +354,38 @@ module HybridTriangleRasterizer (O: HybridTriangleRasterizerOptions) : TriangleR
         let x = pixel_x + tile_xmin
         let y = pixel_y + tile_ymin
         in if x < w && y < h
-           then (y, x)
-           else (-1, -1)
+           then y * w + x
+           else -1
       let k = length unique_tile_ids
       let num_phases = (k + num_intrablocks - 1) >> num_intrablocks_shift
-      in loop dvis_buffer = copy dvis_buffer
-         for phase_index < num_phases do
-           let start = phase_index << num_intrablocks_shift
-           let end = (phase_index + 1) << num_intrablocks_shift `i64.min` k
-           let xs =
-             #[incremental_flattening(only_intra)]
-             iota (end - start)
-             |> map (+ start)
-             |> map f
-             |> flatten
-           let is =
-             iota ((end - start) * (fine_size * fine_size))
-             |> map (+ (start * (fine_size * fine_size)))
-             |> map g
-           in scatter_2d dvis_buffer is xs
-
-    def rasterize 'target [h] [n] [w]
-                  (plot: (fragment V.t -> target))
-                  (depth_type: #normal_z | #reversed_z)
-                  ((ne_target, ne_depth): (target, f32))
-                  ((target_buffer, depth_buffer): ([h][w]target, [h][w]f32))
-                  (tris: [n](fragment V.t, fragment V.t, fragment V.t)) : ([h][w]target, [h][w]f32) =
-      let encode_depth d = (encode_f32 d) ^ (u32.bool (depth_type == #reversed_z) * u32.highest)
-      let encode_depth_index d tri_index = (u64.u32 (encode_depth d) << 32) | u64.u32 tri_index
-      let decode_depth d = decode_f32 (d ^ (u32.bool (depth_type == #reversed_z) * u32.highest))
-      let dvis_buffer = map (map (\v -> encode_depth_index v u32.highest)) depth_buffer
-      let tris = tris |> map ensure_cclockwise_winding_order
-      let tri_idxs = assert (n <= i64.u32 u32.highest - 1) (map u32.i64 (indices tris))
-      let tri_infos =
-        tris
-        |> map (\(f0, f1, f2) ->
-                  let verts = (f0.pos, f1.pos, f2.pos)
-                  let inv_area_2 = 1 / calc_signed_tri_area_2 verts
-                  let verts_fp =
-                    ( vec2f.map fixedpoint.f32 f0.pos
-                    , vec2f.map fixedpoint.f32 f1.pos
-                    , vec2f.map fixedpoint.f32 f2.pos
-                    )
-                  let wzero = calc_wcoeffs_fp verts_fp {x = fixedpoint.i64 0, y = fixedpoint.i64 0}
-                  let wdelta = calc_wdelta_fp verts_fp
-                  let wbias = calc_tri_edge_bias verts_fp
-                  in {tri = (f0, f1, f2), wzero, wdelta, wbias, inv_area_2})
-      let bins_w = round_up_pow2 <| (w + bin_size - 1) >> bin_shift
-      let bins_h = round_up_pow2 <| (h + bin_size - 1) >> bin_shift
-      let (bins_h, bins_w) = assert (bins_h * bins_w - 1 <= i64.u16 u16.highest) (bins_h, bins_w)
-      let coarse_size = assert (coarse_size * coarse_size == coarse_mask.num_bits) coarse_size
-      let coarse_size = assert (coarse_size * coarse_size - 1 <= i64.u8 u8.highest) coarse_size
-      let bin_index_setup = bin_pattern.setup {h = bins_h, w = bins_w}
-      let tile_index_setup = coarse_pattern.setup {h = coarse_size, w = coarse_size}
-      let total_tiles = bins_w * bins_h * (coarse_size * coarse_size)
-      let num_bits_to_sort = ilog2_ceil total_tiles
-      let (small_partition, other_partition) =
-        bin_rasterize bin_index_setup
-                      {h, w}
-                      tri_idxs
-                      tris
-      let (tile_ids, tri_idxs) =
-        other_partition
-        |> coarse_rasterize bin_index_setup tile_index_setup {h, w} tris
-        |> radix_sort_by_key (.0) (i32.i64 num_bits_to_sort) u32.get_bit
-        |> unzip
-      let dvis_buffer =
-        rasterize_tiled bin_index_setup
-                        tile_index_setup
-                        depth_type
-                        ne_depth
-                        dvis_buffer
-                        tri_infos
-                        (tile_ids, tri_idxs)
-      let dvis_buffer =
-        rasterize_small_triangles depth_type
-                                  ne_depth
-                                  dvis_buffer
-                                  tri_infos
-                                  small_partition
+      let dvis_buf =
+        loop dvis_buf = copy (flatten dvis_buffer)
+        for phase_index < num_phases do
+          let start = phase_index << num_intrablocks_shift
+          let end = (phase_index + 1) << num_intrablocks_shift `i64.min` k
+          let xs =
+            #[incremental_flattening(only_intra)]
+            iota (end - start)
+            |> map (+ start)
+            |> map f
+            |> flatten
+          let is =
+            iota ((end - start) * (fine_size * fine_size))
+            |> map (+ (start * (fine_size * fine_size)))
+            |> map g
+          in scatter dvis_buf is xs
       let (is, xs) =
-        dvis_buffer
-        |> flatten
+        dvis_buf
         |> zip (iota (h * w))
         |> map (\(i, v) ->
-                  let depth = decode_depth (u32.u64 (v >> 32))
-                  let tri_index = u32.u64 v
-                  in if tri_index == u32.highest
-                     then (-1, (ne_target, ne_depth))
+                  let depth = decode_depth v
+                  let tri_index = decode_index v
+                  in if tri_index == -1
+                     then (-1, (ne_target, 0))
                      else let x = i %% w
                           let y = i / w
                           let pos = {x = 0.5 + f32.i64 x, y = 0.5 + f32.i64 y}
-                          let {tri = (f0, f1, f2), wzero, wdelta, wbias = _, inv_area_2} = tri_infos[i64.u32 tri_index]
+                          let {tri = (f0, f1, f2), wzero, wdelta, wbias = _, inv_area_2} = tri_infos[tri_index]
                           let wzero = {x = wzero.x, y = wzero.y}
                           let wdelta_x = {x = wdelta.x.x, y = wdelta.x.y}
                           let wdelta_y = {x = wdelta.y.x, y = wdelta.y.y}
@@ -527,17 +397,49 @@ module HybridTriangleRasterizer (O: HybridTriangleRasterizerOptions) : TriangleR
                             |> (inv_area_2 vec2f.*)
                             |> vec2f.to_tuple
                           let W = (w0, w1, 1 - w0 - w1)
-                          let Z_inv = barycentric f0.Z_inv f1.Z_inv f2.Z_inv W
-                          let attr = barycentric_pc_attr Z_inv (f0.attr, f0.Z_inv) (f1.attr, f1.Z_inv) (f2.attr, f2.Z_inv) W
+                          let Z_inv = F32.barycentric f0.Z_inv f1.Z_inv f2.Z_inv W
+                          let attr = Attr.barycentric_pc_w_Zinv Z_inv (f0.attr, f0.Z_inv) (f1.attr, f1.Z_inv) (f2.attr, f2.Z_inv) W
                           in (y * w + x, (plot {pos, Z_inv, depth, attr}, depth)))
         |> unzip
       let dest = zip (flatten target_buffer) (flatten depth_buffer)
       let (target_buf, depth_buf) = scatter dest is xs |> unzip
       in (unflatten target_buf, unflatten depth_buf)
+
+    def rasterize 'target [h] [n] [w]
+                  (plot: (fragment V.t -> target))
+                  ((target_buffer, depth_buffer): ([h][w]target, [h][w]f32))
+                  (tris: [n](fragment V.t, fragment V.t, fragment V.t)) : ([h][w]target, [h][w]f32) =
+      let (target_buffer, depth_buffer) = (copy target_buffer, copy depth_buffer)
+      let tris = (assert (n < (1 << 33) - 1) tris) |> map ensure_cclockwise_winding_order
+      let bins_w = round_up_pow2 <| (w + bin_size - 1) >> bin_shift
+      let bins_h = round_up_pow2 <| (h + bin_size - 1) >> bin_shift
+      let (bins_h, bins_w) = assert (bins_h * bins_w - 1 <= i64.u16 u16.highest) (bins_h, bins_w)
+      let coarse_size = assert (coarse_size * coarse_size == coarse_mask.num_bits) coarse_size
+      let coarse_size = assert (coarse_size * coarse_size - 1 <= i64.u8 u8.highest) coarse_size
+      let bin_index_setup = bin_pattern.setup {h = bins_h, w = bins_w}
+      let tile_index_setup = coarse_pattern.setup {h = coarse_size, w = coarse_size}
+      let total_tiles = bins_w * bins_h * (coarse_size * coarse_size)
+      let num_bits_to_sort = ilog2_ceil total_tiles
+      let (tile_ids, tri_idxs) =
+        bin_rasterize bin_index_setup {h, w} tris
+        |> coarse_rasterize bin_index_setup tile_index_setup {h, w} tris
+        |> uncurry zip
+        |> radix_sort_by_key (.0) (i32.i64 num_bits_to_sort) u32.get_bit
+        |> unzip
+      let (target_buffer, depth_buffer) =
+        rasterize_tiled bin_index_setup
+                        tile_index_setup
+                        plot
+                        (target_buffer, depth_buffer)
+                        tris
+                        (tile_ids, tri_idxs)
+      in (target_buffer, depth_buffer)
   }
 
+module TiledPinedaTriangleRasterizer = CustomTiledPinedaTriangleRasterizer TiledPinedaTriangleRasterizerDefaultOptions
+
 -- | triangle rasterizer for testing purposes. can use the REPL for this
-module HybridTriangleRasterizerTest = {
+module TiledPinedaTriangleRasterizerTest = {
   local
   module V : VaryingSpec with t = bool = {
     type t = bool
@@ -548,7 +450,7 @@ module HybridTriangleRasterizerTest = {
   -- note: above do not satisfy all the algrebraic properties required for varying,
   -- but is defined such for testing purposes
 
-  local module M = HybridTriangleRasterizer HybridTriangleRasterizerDefaultOptions (V)
+  local module M = TiledPinedaTriangleRasterizer V
 
   def rasterize_triangle_tiled_test [n] (h: i64) (w: i64) (vs: [n]((f32, f32), (f32, f32), (f32, f32))) : [h][w]i32 =
     let target_buffer = replicate h (replicate w false)
@@ -561,9 +463,9 @@ module HybridTriangleRasterizerTest = {
                 , {pos = {x = f2.0, y = f2.1}, depth = 1, Z_inv = 1, attr = true}
                 ))
     let plot = (\(f: fragment bool) -> f.attr)
-    in M.rasterize plot #reversed_z (false, -f32.inf) (target_buffer, depth_buffer) frags
+    in M.rasterize plot (target_buffer, depth_buffer) frags
        |> (.0)
        |> map (map i32.bool)
 }
 
-open HybridTriangleRasterizerTest
+open TiledPinedaTriangleRasterizerTest

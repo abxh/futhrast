@@ -6,13 +6,8 @@ local
 module type PointRasterizerSpec =
   (V: VaryingSpec)
   -> {
-    -- | rasterize point given plot function, depth type,
-    -- point fragments, a neutral value for the target/depth buffers and
-    -- the target/depth buffers themselves
     val rasterize 'target [n] [h] [w] :
       (plot: fragment V.t -> target)
-      -> (depth_type: #normal_z | #reversed_z)
-      -> (ne: (target, f32))
       -> ([h][w]target, [h][w]f32)
       -> [n]fragment V.t
       -> ([h][w]target, [h][w]f32)
@@ -28,19 +23,14 @@ module PointRasterizer : PointRasterizerSpec = \(V: VaryingSpec) ->
 
     def rasterize 'target [n] [h] [w]
                   (plot: (fragment V.t -> target))
-                  (depth_type: #normal_z | #reversed_z)
-                  ((ne_target, ne_depth): (target, f32))
                   ((target_buffer, depth_buffer): ([h][w]target, [h][w]f32))
                   (frags: [n]fragment V.t) : ([h][w]target, [h][w]f32) =
-      let depth_select lhs rhs =
-        if depth_type == #reversed_z
-        then f32.max lhs rhs
-        else f32.min lhs rhs
+      let ne_target = copy target_buffer[0, 0]
       let (is, frag_values, depth_values) =
         frags
         |> map unpack_fragment
         |> unzip3
-      let depth_buffer = reduce_by_index_2d (copy depth_buffer) depth_select ne_depth is depth_values
+      let depth_buffer = reduce_by_index_2d (copy depth_buffer) f32.max 0 is depth_values
       let (is, target_values) =
         zip is frag_values
         |> map (\((y, x), f) ->
@@ -53,6 +43,7 @@ module PointRasterizer : PointRasterizerSpec = \(V: VaryingSpec) ->
   }
 
 -- point rasterizer for testing purposes. can use the REPL for this
+local
 module PointRasterizerTest = {
   local
   module V : VaryingSpec with t = bool = {
@@ -66,14 +57,14 @@ module PointRasterizerTest = {
 
   local module M = PointRasterizer V
 
-  def rasterize_point_test [n] (h: i64) (w: i64) (vs: [n](f32, f32)) : [h][w]i32 =
+  def test_rasterize_point [n] (h: i64) (w: i64) (vs: [n](f32, f32)) : [h][w]i32 =
     let target_buffer = replicate h (replicate w false)
-    let depth_buffer = replicate h (replicate w (-f32.inf))
+    let depth_buffer = replicate h (replicate w 0)
     let frags =
       vs
       |> map (\(x, y) -> {pos = {x, y}, depth = 1, Z_inv = 1, attr = true})
     let plot = (\(f: fragment bool) -> f.attr)
-    in M.rasterize plot #reversed_z (false, -f32.inf) (target_buffer, depth_buffer) frags
+    in M.rasterize plot (target_buffer, depth_buffer) frags
        |> (.0)
        |> map (map i32.bool)
 }

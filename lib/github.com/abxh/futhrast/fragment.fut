@@ -1,10 +1,18 @@
 -- | vertex and fragment types
 
 -- | processed vertex type (in homogenous clip space)
-type vertex_out 'varying = {pos: {x: f32, y: f32, z: f32, w: f32}, attr: varying}
+type vertex_out 'varying =
+  { pos: {x: f32, y: f32, z: f32, w: f32}
+  , attr: varying
+  }
 
 -- | fragment type (in screen space)
-type fragment 'varying = {pos: {x: f32, y: f32}, depth: f32, Z_inv: f32, attr: varying}
+type fragment 'varying =
+  { pos: {x: f32, y: f32}
+  , depth: f32
+  , Z_inv: f32
+  , attr: varying
+  }
 
 -- | project a vertex
 def proj 'varying ({pos = {x, y, z, w}, attr}: vertex_out varying) : fragment varying =

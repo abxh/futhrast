@@ -27,6 +27,7 @@ type state =
   { h: i64
   , w: i64
   , pos: (f32, f32, f32)
+  , zoom: f32
   , zmin: f32
   , zmax: f32
   }
@@ -37,6 +38,7 @@ def on_vertex (s: state) (v: (f32, f32, f32)) : vertex_out Varying.t =
   let model =
     transform.identity
     |> (transform.*) (transform.reflect_z)
+    |> (transform.*) (transform.scale_tup (s.zoom, s.zoom, 1))
   let view =
     transform.identity
     |> (transform.*) (transform.translate_tup s.pos)
@@ -65,18 +67,19 @@ def main [n] (vx: [n]f32, vy: [n]f32, vz: [n]f32, inds: []i64) =
     { w = 1024
     , h = 1024
     , pos = (0, 0, 0)
+    , zoom = 1.6
     , zmin = 0.001
     , zmax = 10
     }
   let verts = zip3 vx vy vz
   let s = s with pos.2 = s.zmin + (f32.abs (reduce f32.max f32.lowest (map (.2) verts) - reduce f32.min f32.highest (map (.2) verts)))
   in (tabulate_2d s.h s.w (const (const (argb.black))), tabulate_2d s.h s.w (const (const f32.lowest)))
-     |> R.render render_config
-                 s
-                 { primitive_type = #triangles
-                 , vertices = verts
-                 , indices = inds
-                 }
-                 on_vertex
-                 on_fragment
+     |> R.render_wireframe render_config
+                           s
+                           { primitive_type = #triangles
+                           , vertices = verts
+                           , indices = inds
+                           }
+                           on_vertex
+                           on_fragment
      |> (.0)

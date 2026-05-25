@@ -4,6 +4,7 @@
 import "../../../diku-dk/segmented/segmented"
 
 import "../utils/bitmask"
+import "../utils/encode_f32"
 
 import "../fragment"
 import "../varying"
@@ -15,20 +16,14 @@ import "../math/fixedpoint"
 module type TriangleRasterizerSpec =
   (V: VaryingSpec)
   -> {
-    -- | rasterize triangle given plot function, depth type,
-    -- triangle fragments, a neutral value for the target/depth buffers and
-    -- the target/depth buffers themselves
     val rasterize 'target [n] [h] [w] :
       (plot: fragment V.t -> target)
-      -> (depth_type: #normal_z | #reversed_z)
-      -> (ne: (target, f32))
       -> ([h][w]target, [h][w]f32)
       -> [n](fragment V.t, fragment V.t, fragment V.t)
       -> ([h][w]target, [h][w]f32)
   }
 
--- | options for tweaking
-module type ImmBarycentricTriangleRasterizerOptions = {
+module type ImmPinedaTriangleRasterizerOptions = {
   module coarse_mask: bitmask
   module fine_mask: bitmask
   module small_triangle_mask: bitmask
@@ -39,7 +34,7 @@ module type ImmBarycentricTriangleRasterizerOptions = {
 }
 
 -- | default options
-module ImmBarycentricTriangleRasterizerDefaultOptions : ImmBarycentricTriangleRasterizerOptions = {
+module ImmPinedaTriangleRasterizerDefaultOptions : ImmPinedaTriangleRasterizerOptions = {
   module coarse_mask = bitmask_16
   module fine_mask = bitmask_64
   module small_triangle_mask = bitmask_128
@@ -50,9 +45,9 @@ module ImmBarycentricTriangleRasterizerDefaultOptions : ImmBarycentricTriangleRa
 }
 
 -- | immediate-mode barycentric triangle rasterizer with binning
-module ImmBarycentricTriangleRasterizer (O: ImmBarycentricTriangleRasterizerOptions) : TriangleRasterizerSpec = \(V: VaryingSpec) ->
+module CustomImmPinedaTriangleRasterizer (O: ImmPinedaTriangleRasterizerOptions) : TriangleRasterizerSpec = \(V: VaryingSpec) ->
   {
-    local module V = VaryingExtensions V
+    local module Attr = VaryingExtensions V
     local module F32 = VaryingExtensions f32
 
     local
@@ -74,9 +69,11 @@ module ImmBarycentricTriangleRasterizer (O: ImmBarycentricTriangleRasterizerOpti
     local def coarse_size : i64 = 1 << coarse_shift
     local def small_triangle_size : i64 = 1 << small_triangle_size_shift
 
-    def barycentric = F32.barycentric
-    def barycentric_pc = F32.barycentric_perspective_corrected_w_Z_inv_t
-    def barycentric_pc_attr = V.barycentric_perspective_corrected_w_Z_inv_t
+    def encode_depth d = encode_f32 d
+    def encode_depth_index d tri_index = (u64.u32 (encode_depth d) << 33) | (u64.i64 (tri_index + 1) & ((1 << 33) - 1))
+    def decode_depth dvis = dvis >> 33 |> u32.u64 |> decode_f32
+    def decode_index dvis = dvis & ((1 << 33) - 1) |> i64.u64 |> (i64.- 1)
+    def ne_dvis = encode_depth_index 0 (-1)
 
     local
     module wcoeffs = {
@@ -176,7 +173,7 @@ module ImmBarycentricTriangleRasterizer (O: ImmBarycentricTriangleRasterizerOpti
 
     def fine_rasterize [n]
                        {h = _: i64, w = w: i64}
-                       (tris: []triangle)
+                       tri_infos
                        ((tile_ids, tri_idxs): ([n]u32, [n]i64)) =
       let fine_size = assert (fine_size * fine_size == fine_mask.num_bits) fine_size
       let bins_w = ((w + bin_size - 1) >> bin_shift)
@@ -187,56 +184,45 @@ module ImmBarycentricTriangleRasterizer (O: ImmBarycentricTriangleRasterizerOpti
         let bin_ymin = (bin_index / bins_w) << bin_shift
         let tile_xmin = ((tile_index & (coarse_size - 1)) << fine_shift) + bin_xmin
         let tile_ymin = ((tile_index >> coarse_shift) << fine_shift) + bin_ymin
-        let (f0, f1, f2) = tris[tri_index]
-        let verts = (f0.pos, f1.pos, f2.pos)
-        let inv_area_2 = 1 / calc_signed_tri_area_2 verts
-        let verts_fp =
-          ( vec2f.map fixedpoint.f32 f0.pos
-          , vec2f.map fixedpoint.f32 f1.pos
-          , vec2f.map fixedpoint.f32 f2.pos
-          )
-        let wzero = calc_wcoeffs_fp verts_fp {x = fixedpoint.i64 tile_xmin, y = fixedpoint.i64 tile_ymin}
-        let wdelta = calc_wdelta_fp verts_fp
-        let wbias = calc_tri_edge_bias verts_fp
+        let {tri = _, wzero, wdelta, wbias, inv_area_2 = _} = tri_infos[tri_index]
+        let wdelta: {x: vec3fp.t, y: vec3fp.t} = wdelta
         let g pixel_index =
-          let y = (fixedpoint.f32 0.5) fixedpoint.+ fixedpoint.i64 (pixel_index >> fine_shift)
-          let x = (fixedpoint.f32 0.5) fixedpoint.+ fixedpoint.i64 (pixel_index & (fine_size - 1))
+          let pixel_x = pixel_index & (fine_size - 1)
+          let pixel_y = pixel_index >> fine_shift
+          let x = (fixedpoint.f32 0.5) fixedpoint.+ fixedpoint.i64 (pixel_x + tile_xmin)
+          let y = (fixedpoint.f32 0.5) fixedpoint.+ fixedpoint.i64 (pixel_y + tile_ymin)
           let w = wzero vec3fp.+ wbias vec3fp.+ (x vec3fp.* wdelta.x) vec3fp.+ (y vec3fp.* wdelta.y)
           in w.x fixedpoint.>= (fixedpoint.i64 0)
              && w.y fixedpoint.>= (fixedpoint.i64 0)
              && w.z fixedpoint.>= (fixedpoint.i64 0)
         let mask = fine_mask.from_pred_seq g
-        let wzero = {x = wzero.x, y = wzero.y}
-        let wdelta =
-          { x = {x = wdelta.x.x, y = wdelta.x.y}
-          , y = {x = wdelta.y.x, y = wdelta.y.y}
-          }
-        in ({tile_xmin, tile_ymin}, {tri_index, wzero, wdelta, inv_area_2}, mask)
+        in ({tile_xmin, tile_ymin}, tri_index, mask)
       let sz ((_, _, mask)) = fine_mask.size mask
-      let get (({tile_xmin, tile_ymin}, {tri_index, wzero, wdelta, inv_area_2}, mask)) set_pixel_index =
+      let get (({tile_xmin, tile_ymin}, tri_index, mask)) set_pixel_index =
         let pixel_index = fine_mask.find_ith_set_bit mask set_pixel_index
         let pixel_x = pixel_index & (fine_size - 1)
         let pixel_y = pixel_index >> fine_shift
         let x = pixel_x + tile_xmin
         let y = pixel_y + tile_ymin
-        let pos = {x = 0.5 + f32.i64 x, y = 0.5 + f32.i64 y}
+        let {tri = (f0, f1, f2), wzero, wdelta, wbias = _, inv_area_2} = tri_infos[tri_index]
+        let (f0, f1, f2): triangle = (f0, f1, f2)
+        let wzero = {x = wzero.x, y = wzero.y}
+        let wdelta_x = {x = wdelta.x.x, y = wdelta.x.y}
+        let wdelta_y = {x = wdelta.y.x, y = wdelta.y.y}
         let (w0, w1) =
           wzero
-          vec2fp.+ (((fixedpoint.f32 0.5) fixedpoint.+ fixedpoint.i64 pixel_x) vec2fp.* wdelta.x)
-          vec2fp.+ (((fixedpoint.f32 0.5) fixedpoint.+ fixedpoint.i64 pixel_y) vec2fp.* wdelta.y)
+          vec2fp.+ (((fixedpoint.f32 0.5) fixedpoint.+ fixedpoint.i64 x) vec2fp.* wdelta_x)
+          vec2fp.+ (((fixedpoint.f32 0.5) fixedpoint.+ fixedpoint.i64 y) vec2fp.* wdelta_y)
           |> vec2fp.map fixedpoint.to_f32
           |> (inv_area_2 vec2f.*)
           |> vec2f.to_tuple
         let w = (w0, w1, 1 - w0 - w1)
-        let (f0, f1, f2) = tris[tri_index]
-        let Z_inv = barycentric f0.Z_inv f1.Z_inv f2.Z_inv w
-        let depth = barycentric_pc Z_inv (f0.depth, f0.Z_inv) (f1.depth, f1.Z_inv) (f2.depth, f2.Z_inv) w
-        let attr = barycentric_pc_attr Z_inv (f0.attr, f0.Z_inv) (f1.attr, f1.Z_inv) (f2.attr, f2.Z_inv) w
-        in ((y, x), {pos, Z_inv, depth, attr}, depth)
+        let depth = F32.barycentric f0.depth f1.depth f2.depth w
+        in ((y, x), encode_depth_index depth tri_index)
       in zip tile_ids tri_idxs
          |> map f
          |> expand sz get
-         |> unzip3
+         |> unzip
 
     def coarse_rasterize [n]
                          {h = h: i64, w = w: i64}
@@ -329,35 +315,20 @@ module ImmBarycentricTriangleRasterizer (O: ImmBarycentricTriangleRasterizerOpti
          )
 
     def rasterize_small_triangles 'target [h] [w]
-                                  (plot: (fragment V.t -> target))
-                                  (depth_select: f32 -> f32 -> f32)
-                                  ((ne_target, ne_depth): (target, f32))
-                                  ((target_buffer, depth_buffer): (*[h][w]target, *[h][w]f32))
-                                  (tris: []triangle)
+                                  (dvis_buffer: *[h][w]u64)
+                                  tri_infos
                                   (pairings: [](i64, bbox i64)) =
       let f (tri_index, bbox: bbox i64) =
         let bbox_h = bbox.ymax - bbox.ymin
         let bbox_w = bbox.xmax - bbox.xmin
         let bbox_size = (bbox_h `i64.max` 0) * (bbox_w `i64.max` 0)
-        let (f0, f1, f2) = tris[tri_index]
-        let verts = (f0.pos, f1.pos, f2.pos)
-        let inv_area_2 = 1 / calc_signed_tri_area_2 verts
-        let verts_fp =
-          ( vec2f.map fixedpoint.f32 f0.pos
-          , vec2f.map fixedpoint.f32 f1.pos
-          , vec2f.map fixedpoint.f32 f2.pos
-          )
-        let wzero =
-          calc_wcoeffs_fp verts_fp { x = fixedpoint.i64 bbox.xmin
-                                   , y = fixedpoint.i64 bbox.ymin
-                                   }
-        let wdelta = calc_wdelta_fp verts_fp
-        let wbias = calc_tri_edge_bias verts_fp
+        let {tri = _, wzero, wdelta, wbias, inv_area_2 = _} = tri_infos[tri_index]
+        let wdelta: {x: vec3fp.t, y: vec3fp.t} = wdelta
         let g bbox_index =
           let bbox_x = bbox_index %% bbox_w
           let bbox_y = bbox_index / bbox_w
-          let x = (fixedpoint.f32 0.5) fixedpoint.+ fixedpoint.i64 bbox_x
-          let y = (fixedpoint.f32 0.5) fixedpoint.+ fixedpoint.i64 bbox_y
+          let x = (fixedpoint.f32 0.5) fixedpoint.+ fixedpoint.i64 (bbox_x + bbox.xmin)
+          let y = (fixedpoint.f32 0.5) fixedpoint.+ fixedpoint.i64 (bbox_y + bbox.ymin)
           let w = wzero vec3fp.+ wbias vec3fp.+ (x vec3fp.* wdelta.x) vec3fp.+ (y vec3fp.* wdelta.y)
           in w.x fixedpoint.>= (fixedpoint.i64 0)
              && w.y fixedpoint.>= (fixedpoint.i64 0)
@@ -366,82 +337,102 @@ module ImmBarycentricTriangleRasterizer (O: ImmBarycentricTriangleRasterizerOpti
           loop b = small_triangle_mask.empty
           for pos in 0..<bbox_size do
             small_triangle_mask.set b pos (g pos)
-        in (bbox, {tri_index, wzero, wdelta, inv_area_2}, mask)
+        in (bbox, tri_index, mask)
       let sz ((_, _, mask)) = small_triangle_mask.size mask
-      let get ((bbox, {tri_index, wzero, wdelta, inv_area_2}, mask)) set_bbox_index =
+      let get ((bbox, tri_index, mask)) set_bbox_index =
         let bbox_w = bbox.xmax - bbox.xmin
         let bbox_index = small_triangle_mask.find_ith_set_bit mask set_bbox_index
         let bbox_x = bbox_index %% bbox_w
         let bbox_y = bbox_index / bbox_w
         let x = bbox_x + bbox.xmin
         let y = bbox_y + bbox.ymin
-        let pos = {x = 0.5 + f32.i64 x, y = 0.5 + f32.i64 y}
-        let w =
+        let {tri = (f0, f1, f2), wzero, wdelta, wbias = _, inv_area_2} = tri_infos[tri_index]
+        let (f0, f1, f2): triangle = (f0, f1, f2)
+        let wzero = {x = wzero.x, y = wzero.y}
+        let wdelta_x = {x = wdelta.x.x, y = wdelta.x.y}
+        let wdelta_y = {x = wdelta.y.x, y = wdelta.y.y}
+        let (w0, w1) =
           wzero
-          vec3fp.+ (((fixedpoint.f32 0.5) fixedpoint.+ fixedpoint.i64 bbox_x) vec3fp.* wdelta.x)
-          vec3fp.+ (((fixedpoint.f32 0.5) fixedpoint.+ fixedpoint.i64 bbox_y) vec3fp.* wdelta.y)
-          |> vec3fp.map fixedpoint.to_f32
-          |> (inv_area_2 vec3f.*)
-          |> vec3f.to_tuple
-        let (f0, f1, f2) = tris[tri_index]
-        let Z_inv = barycentric f0.Z_inv f1.Z_inv f2.Z_inv w
-        let depth = barycentric_pc Z_inv (f0.depth, f0.Z_inv) (f1.depth, f1.Z_inv) (f2.depth, f2.Z_inv) w
-        let attr = barycentric_pc_attr Z_inv (f0.attr, f0.Z_inv) (f1.attr, f1.Z_inv) (f2.attr, f2.Z_inv) w
-        in ((y, x), {pos, Z_inv, depth, attr}, depth)
-      let (is, frag_values, depth_values) =
+          vec2fp.+ (((fixedpoint.f32 0.5) fixedpoint.+ fixedpoint.i64 x) vec2fp.* wdelta_x)
+          vec2fp.+ (((fixedpoint.f32 0.5) fixedpoint.+ fixedpoint.i64 y) vec2fp.* wdelta_y)
+          |> vec2fp.map fixedpoint.to_f32
+          |> (inv_area_2 vec2f.*)
+          |> vec2f.to_tuple
+        let w = (w0, w1, 1 - w0 - w1)
+        let depth = F32.barycentric f0.depth f1.depth f2.depth w
+        in ((y, x), encode_depth_index depth tri_index)
+      let (is, xs) =
         pairings
         |> map f
         |> expand sz get
-        |> unzip3
-      let depth_buffer = reduce_by_index_2d depth_buffer depth_select ne_depth is depth_values
-      let (is, target_values) =
-        zip is frag_values
-        |> map (\((y, x), f) ->
-                  if (0 <= x && x < w) && (0 <= y && y < h) && depth_buffer[y, x] == f.depth
-                  then ((y, x), plot f)
-                  else ((-1, -1), ne_target))
-        |> unzip2
-      let target_buffer = scatter_2d target_buffer is target_values
-      in (target_buffer, depth_buffer)
+        |> unzip
+      in reduce_by_index_2d dvis_buffer u64.max ne_dvis is xs
 
-    def rasterize 'target [h] [w]
+    def rasterize 'target [h] [w] [n]
                   (plot: (fragment V.t -> target))
-                  (depth_type: #normal_z | #reversed_z)
-                  ((ne_target, ne_depth): (target, f32))
                   ((target_buffer, depth_buffer): ([h][w]target, [h][w]f32))
-                  (tris: [](fragment V.t, fragment V.t, fragment V.t)) : ([h][w]target, [h][w]f32) =
-      let (target_buffer, depth_buffer) = (copy target_buffer, copy depth_buffer)
-      let depth_select lhs rhs =
-        if depth_type == #reversed_z
-        then f32.max lhs rhs
-        else f32.min lhs rhs
-      let tris = tris |> map ensure_cclockwise_winding_order
+                  (tris: [n](fragment V.t, fragment V.t, fragment V.t)) : ([h][w]target, [h][w]f32) =
+      let tris = (assert (n < (1 << 33) - 1) tris) |> map ensure_cclockwise_winding_order
+      let ne_target = copy target_buffer[0, 0]
+      let dvis_buffer = map (map (\v -> encode_depth_index v (-1))) depth_buffer
+      let tri_infos =
+        tris
+        |> map (\(f0, f1, f2) ->
+                  let verts = (f0.pos, f1.pos, f2.pos)
+                  let inv_area_2 = 1 / calc_signed_tri_area_2 verts
+                  let verts_fp =
+                    ( vec2f.map fixedpoint.f32 f0.pos
+                    , vec2f.map fixedpoint.f32 f1.pos
+                    , vec2f.map fixedpoint.f32 f2.pos
+                    )
+                  let wzero = calc_wcoeffs_fp verts_fp {x = fixedpoint.i64 0, y = fixedpoint.i64 0}
+                  let wdelta = calc_wdelta_fp verts_fp
+                  let wbias = calc_tri_edge_bias verts_fp
+                  in {tri = (f0, f1, f2), wzero, wdelta, wbias, inv_area_2})
       let (small_partition, other_partition) = bin_rasterize {h, w} tris
-      let (target_buffer, depth_buffer) =
-        rasterize_small_triangles plot
-                                  depth_select
-                                  ((ne_target, ne_depth))
-                                  (target_buffer, depth_buffer)
-                                  tris
-                                  small_partition
-      let (is, frag_values, depth_values) =
+      let (is, xs) =
         other_partition
         |> coarse_rasterize {h, w} tris
-        |> fine_rasterize {h, w} tris
-      let depth_buffer = reduce_by_index_2d depth_buffer depth_select ne_depth is depth_values
-      let (is, target_values) =
-        zip is frag_values
-        |> map (\((y, x), f) ->
-                  if (0 <= x && x < w) && (0 <= y && y < h) && depth_buffer[y, x] == f.depth
-                  then ((y, x), plot f)
-                  else ((-1, -1), ne_target))
-        |> unzip2
-      let target_buffer = scatter_2d target_buffer is target_values
-      in (target_buffer, depth_buffer)
+        |> fine_rasterize {h, w} tri_infos
+      let dvis_buffer = reduce_by_index_2d dvis_buffer u64.max ne_dvis is xs
+      let dvis_buffer = rasterize_small_triangles dvis_buffer tri_infos small_partition
+      let (is, xs) =
+        dvis_buffer
+        |> flatten
+        |> zip (iota (h * w))
+        |> map (\(i, v) ->
+                  let depth = decode_depth v
+                  let tri_index = decode_index v
+                  in if tri_index == -1
+                     then (-1, (ne_target, 0))
+                     else let x = i %% w
+                          let y = i / w
+                          let pos = {x = 0.5 + f32.i64 x, y = 0.5 + f32.i64 y}
+                          let {tri = (f0, f1, f2), wzero, wdelta, wbias = _, inv_area_2} = tri_infos[tri_index]
+                          let wzero = {x = wzero.x, y = wzero.y}
+                          let wdelta_x = {x = wdelta.x.x, y = wdelta.x.y}
+                          let wdelta_y = {x = wdelta.y.x, y = wdelta.y.y}
+                          let (w0, w1) =
+                            wzero
+                            vec2fp.+ (((fixedpoint.f32 0.5) fixedpoint.+ fixedpoint.i64 x) vec2fp.* wdelta_x)
+                            vec2fp.+ (((fixedpoint.f32 0.5) fixedpoint.+ fixedpoint.i64 y) vec2fp.* wdelta_y)
+                            |> vec2fp.map fixedpoint.to_f32
+                            |> (inv_area_2 vec2f.*)
+                            |> vec2f.to_tuple
+                          let W = (w0, w1, 1 - w0 - w1)
+                          let Z_inv = F32.barycentric f0.Z_inv f1.Z_inv f2.Z_inv W
+                          let attr = Attr.barycentric_pc_w_Zinv Z_inv (f0.attr, f0.Z_inv) (f1.attr, f1.Z_inv) (f2.attr, f2.Z_inv) W
+                          in (y * w + x, (plot {pos, Z_inv, depth, attr}, depth)))
+        |> unzip
+      let dest = zip (flatten target_buffer) (flatten depth_buffer)
+      let (target_buf, depth_buf) = scatter dest is xs |> unzip
+      in (unflatten target_buf, unflatten depth_buf)
   }
 
+module ImmPinedaTriangleRasterizer = CustomImmPinedaTriangleRasterizer ImmPinedaTriangleRasterizerDefaultOptions
+
 -- | triangle rasterizer for testing purposes. can use the REPL for this
-module ImmBarycentricTriangleRasterizerTest = {
+module ImmPinedaTriangleRasterizerTest = {
   local
   module V : VaryingSpec with t = bool = {
     type t = bool
@@ -452,7 +443,7 @@ module ImmBarycentricTriangleRasterizerTest = {
   -- note: above do not satisfy all the algrebraic properties required for varying,
   -- but is defined such for testing purposes
 
-  local module M = ImmBarycentricTriangleRasterizer ImmBarycentricTriangleRasterizerDefaultOptions (V)
+  local module M = ImmPinedaTriangleRasterizer V
 
   def rasterize_triangle_tiled_test [n] (h: i64) (w: i64) (vs: [n]((f32, f32), (f32, f32), (f32, f32))) : [h][w]i32 =
     let target_buffer = replicate h (replicate w false)
@@ -465,9 +456,9 @@ module ImmBarycentricTriangleRasterizerTest = {
                 , {pos = {x = f2.0, y = f2.1}, depth = 1, Z_inv = 1, attr = true}
                 ))
     let plot = (\(f: fragment bool) -> f.attr)
-    in M.rasterize plot #reversed_z (false, -f32.inf) (target_buffer, depth_buffer) frags
+    in M.rasterize plot (target_buffer, depth_buffer) frags
        |> (.0)
        |> map (map i32.bool)
 }
 
-open ImmBarycentricTriangleRasterizerTest
+open ImmPinedaTriangleRasterizerTest

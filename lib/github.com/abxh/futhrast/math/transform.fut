@@ -11,15 +11,20 @@ module transform = {
   def inverse = linalg_f32.inv
   def transpose = transpose
 
-  -- | apply to position vector
-  def apply_to_pos (p: vec3f.t) (m: [4][4]f32) =
+  -- | apply and return vector in homogeneous space
+  def apply (p: vec3f.t) (m: [4][4]f32) =
     let v = [p.x, p.y, p.z, 1]
     in linalg_f32.matvecmul_row m v |> vec4f.from_array
 
-  -- | apply to position vector
+  -- | apply to position vector (without dividing by 1/w)
+  def apply_to_pos (p: vec3f.t) (m: [4][4]f32) =
+    let v = [p.x, p.y, p.z, 1]
+    in (linalg_f32.matvecmul_row m v)[:3] |> vec3f.from_array
+
+  -- | apply to direction vector
   def apply_to_dir (p: vec3f.t) (m: [4][4]f32) =
     let v = [p.x, p.y, p.z, 0]
-    in linalg_f32.matvecmul_row m v |> vec4f.from_array
+    in (linalg_f32.matvecmul_row m v)[:3] |> vec3f.from_array
 
   -- | (x,y,z) |-> (x, y, z)
   def identity : [4][4]f32 =
@@ -55,13 +60,13 @@ module transform = {
        , [0, 0, 0, 1]
        ]
 
-  def scale_x sx = scale sx 0 0
-  def scale_y sy = scale 0 sy 0
-  def scale_z sz = scale 0 0 sz
+  def scale_x sx = scale sx 1 1
+  def scale_y sy = scale 1 sy 1
+  def scale_z sz = scale 1 1 sz
 
-  def reflect_x = scale (-1) 0 0
-  def reflect_y = scale 0 (-1) 0
-  def reflect_z = scale 0 0 (-1)
+  def reflect_x = scale (-1) 1 1
+  def reflect_y = scale 1 (-1) 1
+  def reflect_z = scale 1 1 (-1)
 
   def scale_vec (v: {x: f32, y: f32, z: f32}) = scale v.x v.y v.z
   def scale_tup (sx: f32, sy: f32, sz: f32) = scale sx sy sz
