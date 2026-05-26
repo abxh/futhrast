@@ -143,6 +143,9 @@ module CustomRenderSetup (T: TriangleRasterizerSpec) : RenderSetupSpec = \(V: Va
          case #triangles ->
            (iota (length vs / 3))
            |> map (\i -> (vs[3 * i], vs[3 * i + 1], vs[3 * i + 2]))
+           |> map (\(v0, v1, v2) ->
+                     -- note: following SDL convention and flipping the y swaps the triangle winding order
+                     (v0, v2, v1))
            |> clip_triangles lerp_vertex_fragment
            |> map (\(v0, v1, v2) -> (f v0, f v1, f v2))
            |> filter (\tri -> winding_order_test c tri)
@@ -162,6 +165,7 @@ module CustomRenderSetup (T: TriangleRasterizerSpec) : RenderSetupSpec = \(V: Va
          case #triangles ->
            (iota (length vs / 3))
            |> map (\i -> (vs[3 * i], vs[3 * i + 1], vs[3 * i + 2]))
+           |> map (\(v0, v1, v2) -> (v0, v2, v1))
            |> expand (\_ -> 3) (\t j -> (j, t))
            |> map (\(j, t) -> if j == 0 then (t.0, t.1) else if j == 1 then (t.1, t.2) else (t.2, t.0))
            |> clip_lines lerp_vertex_fragment

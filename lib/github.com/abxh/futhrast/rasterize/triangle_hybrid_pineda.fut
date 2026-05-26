@@ -77,9 +77,9 @@ module CustomHybridPinedaTriangleRasterizer (O: HybridPinedaTriangleRasterizerOp
     local def small_triangle_size : i64 = 1 << small_triangle_size_shift
 
     def encode_depth d = encode_f32 d
-    def encode_depth_index d tri_index = (u64.u32 (encode_depth d) << 33) | (u64.i64 (tri_index + 1) & ((1 << 33) - 1))
-    def decode_depth dvis = dvis >> 33 |> u32.u64 |> decode_f32
-    def decode_index dvis = dvis & ((1 << 33) - 1) |> i64.u64 |> (i64.- 1)
+    def encode_depth_index d tri_index = (u64.u32 (encode_depth d) << 32) | (u64.i64 (tri_index + 1) & ((1 << 32) - 1))
+    def decode_depth dvis = dvis >> 32 |> u32.u64 |> decode_f32
+    def decode_index dvis = dvis & ((1 << 32) - 1) |> i64.u64 |> (i64.- 1)
     def ne_dvis = encode_depth_index 0 (-1)
 
     local
@@ -435,7 +435,7 @@ module CustomHybridPinedaTriangleRasterizer (O: HybridPinedaTriangleRasterizerOp
                   (tris: [n](fragment V.t, fragment V.t, fragment V.t)) : ([h][w]target, [h][w]f32) =
       let ne_target = copy target_buffer[0, 0]
       let dvis_buffer = map (map (\v -> encode_depth_index v (-1))) depth_buffer
-      let tris = (assert (n < (1 << 33) - 1) tris) |> map ensure_cclockwise_winding_order
+      let tris = (assert (n < (1 << 32) - 1) tris) |> map ensure_cclockwise_winding_order
       let tri_infos =
         tris
         |> map (\(f0, f1, f2) ->

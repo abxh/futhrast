@@ -61,7 +61,7 @@ def on_fragment (_: state) (f: fragment Varying.t) : argb.colour =
 
 def main [n] (vx: [n]f32, vy: [n]f32, vz: [n]f32, inds: []i64) =
   let render_config: render_config =
-    { triangle_winding_order = #clockwise
+    { triangle_winding_order = #counterclockwise
     }
   let s: state =
     { w = 1024
