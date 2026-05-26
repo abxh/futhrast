@@ -5,6 +5,7 @@
 To build the examples, run:
 
 ```bash
+futhark pkg sync
 cd examples
 futhark pkg sync
 cd <example directory>
