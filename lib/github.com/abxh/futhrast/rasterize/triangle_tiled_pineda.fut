@@ -10,7 +10,6 @@ import "../utils/encode_f32"
 
 import "../fragment"
 import "../varying"
-
 import "../math/vec"
 import "../math/fixedpoint"
 
@@ -71,6 +70,7 @@ module CustomTiledPinedaTriangleRasterizer (O: TiledPinedaTriangleRasterizerOpti
     local def coarse_size : i64 = 1 << coarse_shift
     local def num_intrablocks : i64 = 1 << num_intrablocks_shift
 
+    def highest_tri_count : i64 = (1 << 33) - 1
     def encode_depth d = encode_f32 d
     def encode_depth_index d tri_index = (u64.u32 (encode_depth d) << 33) | (u64.i64 (tri_index + 1) & ((1 << 33) - 1))
     def decode_depth dvis = dvis >> 33 |> u32.u64 |> decode_f32
@@ -396,7 +396,7 @@ module CustomTiledPinedaTriangleRasterizer (O: TiledPinedaTriangleRasterizerOpti
                   ((target_buffer, depth_buffer): ([h][w]target, [h][w]f32))
                   (tris: [n](fragment V.t, fragment V.t, fragment V.t)) : ([h][w]target, [h][w]f32) =
       let (target_buffer, depth_buffer) = (copy target_buffer, copy depth_buffer)
-      let tris = (assert (n < (1 << 33) - 1) tris) |> map ensure_cclockwise_winding_order
+      let tris = (assert (n < highest_tri_count) tris) |> map ensure_cclockwise_winding_order
       let bins_w = round_up_pow2 <| (w + bin_size - 1) >> bin_shift
       let bins_h = round_up_pow2 <| (h + bin_size - 1) >> bin_shift
       let (bins_h, bins_w) = assert (bins_h * bins_w - 1 <= i64.u16 u16.highest) (bins_h, bins_w)

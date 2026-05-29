@@ -1,12 +1,11 @@
 -- immediate-mode scanline triangle rasterizer
 
--- todo: remove the rounding error workaround
-
 import "../../../diku-dk/segmented/segmented"
+
+import "../utils/encode_f32"
 
 import "../fragment"
 import "../varying"
-import "../utils/encode_f32"
 import "../math/vec"
 
 -- | triangle rasterizer specfication
@@ -34,10 +33,11 @@ module ImmScanlineTriangleRasterizer : TriangleRasterizerSpec = \(V: VaryingSpec
     local
     type triangle = (fragment V.t, fragment V.t, fragment V.t)
 
+    def highest_tri_count : i64 = (1 << 33) - 1
     def encode_depth d = encode_f32 d
-    def encode_depth_index d tri_index = (u64.u32 (encode_depth d) << 32) | (u64.i64 (tri_index + 1) & ((1 << 32) - 1))
-    def decode_depth dvis = dvis >> 32 |> u32.u64 |> decode_f32
-    def decode_index dvis = dvis & ((1 << 32) - 1) |> i64.u64 |> (i64.- 1)
+    def encode_depth_index d tri_index = (u64.u32 (encode_depth d) << 33) | (u64.i64 (tri_index + 1) & ((1 << 33) - 1))
+    def decode_depth dvis = dvis >> 33 |> u32.u64 |> decode_f32
+    def decode_index dvis = dvis & ((1 << 33) - 1) |> i64.u64 |> (i64.- 1)
     def ne_dvis = encode_depth_index 0 (-1)
 
     def calc_signed_tri_area_2 ((v0, v1, v2): (vec2f.t, vec2f.t, vec2f.t)) : f32 =
@@ -139,7 +139,7 @@ module ImmScanlineTriangleRasterizer : TriangleRasterizerSpec = \(V: VaryingSpec
                   (tris: [n](fragment V.t, fragment V.t, fragment V.t)) : ([h][w]target, [h][w]f32) =
       let ne_target = copy target_buffer[0, 0]
       let dvis_buffer = map (map (\v -> encode_depth_index v (-1))) depth_buffer
-      let tris = (assert (n < (1 << 32) - 1) tris) |> map ensure_cclockwise_winding_order
+      let tris = (assert (n < highest_tri_count) tris) |> map ensure_cclockwise_winding_order
       let (is, xs) =
         zip tris (indices tris)
         |> expand num_lines_in_triangle get_line_in_triangle

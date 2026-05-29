@@ -8,7 +8,6 @@ import "../utils/encode_f32"
 
 import "../fragment"
 import "../varying"
-
 import "../math/vec"
 import "../math/fixedpoint"
 
@@ -69,6 +68,7 @@ module CustomImmPinedaTriangleRasterizer (O: ImmPinedaTriangleRasterizerOptions)
     local def coarse_size : i64 = 1 << coarse_shift
     local def small_triangle_size : i64 = 1 << small_triangle_size_shift
 
+    def highest_tri_count : i64 = (1 << 33) - 1
     def encode_depth d = encode_f32 d
     def encode_depth_index d tri_index = (u64.u32 (encode_depth d) << 33) | (u64.i64 (tri_index + 1) & ((1 << 33) - 1))
     def decode_depth dvis = dvis >> 33 |> u32.u64 |> decode_f32
@@ -291,10 +291,11 @@ module CustomImmPinedaTriangleRasterizer (O: ImmPinedaTriangleRasterizerOptions)
       let (small_partition, other_partition) =
         indices tris
         |> map f
-        |> partition (\(_, bbox) ->
-                        let bbox_h = bbox.ymax - bbox.ymin
-                        let bbox_w = bbox.xmax - bbox.xmin
-                        in (bbox_h `i64.max` 0) * (bbox_w `i64.max` 0) <= small_triangle_size)
+        |> partition (\(_, tri_bbox) ->
+                        let tri_bbox_h = tri_bbox.ymax - tri_bbox.ymin
+                        let tri_bbox_w = tri_bbox.xmax - tri_bbox.xmin
+                        let tri_bbox_area = (tri_bbox_h `i64.max` 0) * (tri_bbox_w `i64.max` 0)
+                        in tri_bbox_area <= small_triangle_size)
       in ( small_partition
          , other_partition
            |> map g
@@ -302,9 +303,7 @@ module CustomImmPinedaTriangleRasterizer (O: ImmPinedaTriangleRasterizerOptions)
            |> unzip
          )
 
-    def rasterize_small_triangles 'target [h] [w]
-                                  (dvis_buffer: *[h][w]u64)
-                                  tri_infos
+    def rasterize_small_triangles tri_infos
                                   (pairings: [](i64, bbox i64)) =
       let f (tri_index, bbox: bbox i64) =
         let bbox_h = bbox.ymax - bbox.ymin
@@ -349,18 +348,16 @@ module CustomImmPinedaTriangleRasterizer (O: ImmPinedaTriangleRasterizerOptions)
         let w = (w0, w1, 1 - w0 - w1)
         let depth = F32.barycentric f0.depth f1.depth f2.depth w
         in ((y, x), encode_depth_index depth tri_index)
-      let (is, xs) =
-        pairings
-        |> map f
-        |> expand sz get
-        |> unzip
-      in reduce_by_index_2d dvis_buffer u64.max ne_dvis is xs
+      in pairings
+         |> map f
+         |> expand sz get
+         |> unzip
 
     def rasterize 'target [h] [w] [n]
                   (plot: (fragment V.t -> target))
                   ((target_buffer, depth_buffer): ([h][w]target, [h][w]f32))
                   (tris: [n](fragment V.t, fragment V.t, fragment V.t)) : ([h][w]target, [h][w]f32) =
-      let tris = (assert (n < (1 << 33) - 1) tris) |> map ensure_cclockwise_winding_order
+      let tris = (assert (n < highest_tri_count) tris) |> map ensure_cclockwise_winding_order
       let ne_target = copy target_buffer[0, 0]
       let dvis_buffer = map (map (\v -> encode_depth_index v (-1))) depth_buffer
       let tri_infos =
@@ -383,7 +380,8 @@ module CustomImmPinedaTriangleRasterizer (O: ImmPinedaTriangleRasterizerOptions)
         |> coarse_rasterize {h, w} tris
         |> fine_rasterize {h, w} tri_infos
       let dvis_buffer = reduce_by_index_2d dvis_buffer u64.max ne_dvis is xs
-      let dvis_buffer = rasterize_small_triangles dvis_buffer tri_infos small_partition
+      let (is, xs) = rasterize_small_triangles tri_infos small_partition
+      let dvis_buffer = reduce_by_index_2d dvis_buffer u64.max ne_dvis is xs
       let (is, xs) =
         dvis_buffer
         |> flatten
