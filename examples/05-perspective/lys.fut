@@ -250,7 +250,7 @@ module lys : lys with text_content = lys_text_content.text_content = {
     let verts' = zip (sized n (map (\i -> s.verts[i]) s.inds)) (sized n s.normals)
     let s = s with verts_avg_pos.0 = f32.sum (map (.0) s.verts) / f32.i64 (length s.verts)
     let s = s with verts_avg_pos.2 = f32.sum (map (.2) s.verts) / f32.i64 (length s.verts)
-    in (tabulate_2d s.h s.w (const (const (argb.white))), tabulate_2d s.h s.w (const (const f32.lowest)))
+    in (tabulate_2d s.h s.w (const (const (argb.black))), tabulate_2d s.h s.w (const (const f32.lowest)))
        |> RV.render render_config
                     s
                     { primitive_type = #triangles
@@ -259,5 +259,18 @@ module lys : lys with text_content = lys_text_content.text_content = {
                     }
                     on_vertex
                     on_model_fragment
+       |> RC.render render_config
+                    s
+                    { primitive_type = #triangles
+                    , vertices =
+                        [ (-20, y_min, -20)
+                        , (20, y_min, -20)
+                        , (20, y_min, 20)
+                        , (-20, y_min, 20)
+                        ]
+                    , indices = [0, 1, 2, 0, 2, 3]
+                    }
+                    on_checkerboard_vertex
+                    on_checkerboard_fragment
        |> (.0)
 }
