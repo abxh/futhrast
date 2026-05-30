@@ -275,7 +275,7 @@ module lys : lys with text_content = lys_text_content.text_content = {
       case #armadillo -> (s.verts_armadillo, s.inds_armadillo)
     let s =
       s with pos.2 = s.zmin + (f32.abs (reduce f32.max f32.lowest (map (.2) verts) - reduce f32.min f32.highest (map (.2) verts)))
-    in (tabulate_2d s.h s.w (const (const (argb.black))), tabulate_2d s.h s.w (const (const f32.lowest)))
+    in (tabulate_2d s.h s.w (const (const (argb.black))), tabulate_2d s.h s.w (const (const 0)))
        |> R.render render_config
                    s
                    { primitive_type = #points

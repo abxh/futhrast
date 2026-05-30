@@ -162,7 +162,7 @@ module lys : lys with text_content = lys_text_content.text_content = {
     let render_config: render_config =
       { triangle_winding_order = #neither
       }
-    in (tabulate_2d s.h s.w (const (const (argb.white))), tabulate_2d s.h s.w (const (const f32.lowest)))
+    in (tabulate_2d s.h s.w (const (const (argb.white))), tabulate_2d s.h s.w (const (const 0)))
        |> RD.render_wireframe render_config
                               s
                               { primitive_type = #triangles

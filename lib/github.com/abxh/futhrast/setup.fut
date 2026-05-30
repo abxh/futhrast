@@ -1,6 +1,5 @@
 -- | setup vertices to pass to rasterizer
 
--- todo: add quad support
 -- todo: add texture support
 
 import "../../diku-dk/segmented/segmented"
@@ -35,7 +34,8 @@ type^ vertex_shader 'uniform 'varying 'vertex =
   uniform -> vertex -> vertex_out varying
 
 -- | fragment shader function
-type^ fragment_shader 'uniform 'varying 'target = uniform -> fragment varying -> target
+type^ fragment_shader 'uniform 'varying 'target =
+  uniform -> fragment varying -> target
 
 -- | rendering setup specification
 module type RenderSetupSpec =
@@ -84,9 +84,10 @@ module type RenderSetupSpec =
   }
 
 -- | rendering setup implementation
-module CustomRenderSetup (T: TriangleRasterizerSpec) : RenderSetupSpec = \(V: VaryingSpec) ->
+module CustomRenderSetup (T: TriangleRasterizerSpec)
+  : RenderSetupSpec = \(V: VaryingSpec) ->
   {
-    local module Point = PointRasterizer V
+    local module Point = PointRasterizer
     local module Line = LineRasterizer V
     local module Triangle = T V
 
@@ -94,13 +95,22 @@ module CustomRenderSetup (T: TriangleRasterizerSpec) : RenderSetupSpec = \(V: Va
     local module Vec4f = VaryingExtensions vec4f
 
     local
-    def lerp_vertex_fragment (f0: vertex_out V.t) (f1: vertex_out V.t) t =
-      {pos = Vec4f.lerp f0.pos f1.pos t, attr = V.lerp f0.attr f1.attr t}
+    def lerp_vertex_fragment (f0: vertex_out V.t)
+                             (f1: vertex_out V.t)
+                             t =
+      { pos = Vec4f.lerp f0.pos f1.pos t
+      , attr = V.lerp f0.attr f1.attr t
+      }
 
     local
     def map_screen_to_window 'varying
                              {w = w: i64, h = h: i64}
-                             ({pos = {x, y}, depth, Z_inv, attr}: fragment varying) : fragment varying =
+                             ({ pos = {x, y}
+                              , depth
+                              , Z_inv
+                              , attr
+                              }: fragment varying
+                             ) : fragment varying =
       -- following SDL y-up convention (flipping the y)
       let x' = (x + 1) / 2
       let y' = (y + 1) / 2
@@ -109,7 +119,11 @@ module CustomRenderSetup (T: TriangleRasterizerSpec) : RenderSetupSpec = \(V: Va
       in {pos = {x = x'', y = y''}, depth, Z_inv, attr}
 
     local
-    def winding_order_test (c: render_config) (f0: fragment V.t, f1: fragment V.t, f2: fragment V.t) : bool =
+    def winding_order_test (c: render_config)
+                           ( f0: fragment V.t
+                           , f1: fragment V.t
+                           , f2: fragment V.t
+                           ) : bool =
       let (v0, v1, v2) = (f0.pos, f1.pos, f2.pos)
       let v0v1 = v1 vec2f.- v0
       let v0v2 = v2 vec2f.- v0
@@ -124,7 +138,9 @@ module CustomRenderSetup (T: TriangleRasterizerSpec) : RenderSetupSpec = \(V: Va
                (d: model_data vertex)
                (on_vert: vertex_shader uniform V.t vertex)
                (on_frag: fragment_shader uniform V.t target)
-               (target_buffer: [h][w]target, depth_buffer: [h][w]f32) : ([h][w]target, [h][w]f32) =
+               ( target_buffer: [h][w]target
+               , depth_buffer: [h][w]f32
+               ) : ([h][w]target, [h][w]f32) =
       let f = proj >-> map_screen_to_window {h, w}
       let vs = map (on_vert u) d.vertices
       let vs = map (\i -> vs[i]) d.indices
@@ -154,7 +170,9 @@ module CustomRenderSetup (T: TriangleRasterizerSpec) : RenderSetupSpec = \(V: Va
                          (d: model_data vertex)
                          (on_vert: vertex_shader uniform V.t vertex)
                          (on_frag: fragment_shader uniform V.t target)
-                         (target_buffer: [h][w]target, depth_buffer: [h][w]f32) : ([h][w]target, [h][w]f32) =
+                         ( target_buffer: [h][w]target
+                         , depth_buffer: [h][w]f32
+                         ) : ([h][w]target, [h][w]f32) =
       let f = proj >-> map_screen_to_window {h, w}
       let vs = map (on_vert u) d.vertices
       let vs = map (\i -> vs[i]) d.indices
@@ -163,7 +181,11 @@ module CustomRenderSetup (T: TriangleRasterizerSpec) : RenderSetupSpec = \(V: Va
            (iota (length vs / 3))
            |> map (\i -> (vs[3 * i], vs[3 * i + 1], vs[3 * i + 2]))
            |> expand (\_ -> 3) (\t j -> (j, t))
-           |> map (\(j, t) -> if j == 0 then (t.0, t.1) else if j == 1 then (t.1, t.2) else (t.2, t.0))
+           |> map (\(j, t) ->
+                     match j
+                     case 0 -> (t.0, t.1)
+                     case 1 -> (t.1, t.2)
+                     case _ -> (t.2, t.0))
            |> clip_lines lerp_vertex_fragment
            |> map (\(v0, v1) -> (f v0, f v1))
            |> Line.rasterize (on_frag u) (target_buffer, depth_buffer)
@@ -181,13 +203,19 @@ module CustomRenderSetup (T: TriangleRasterizerSpec) : RenderSetupSpec = \(V: Va
                        (normal_scale: f32)
                        (on_vert: vertex_shader uniform V.t (f32, f32, f32))
                        (on_frag: fragment_shader uniform V.t target)
-                       (target_buffer: [h][w]target, depth_buffer: [h][w]f32) : ([h][w]target, [h][w]f32) =
+                       ( target_buffer: [h][w]target
+                       , depth_buffer: [h][w]f32
+                       ) : ([h][w]target, [h][w]f32) =
       let f = proj >-> map_screen_to_window {h, w}
       let indexed_verts = map (\i -> d.vertices[i]) d.indices
       let normal_lines =
         map2 (\v n ->
                 let p0 = v
-                let p1 = (v.0 + n.0 * normal_scale, v.1 + n.1 * normal_scale, v.2 + n.2 * normal_scale)
+                let p1 =
+                  ( v.0 + n.0 * normal_scale
+                  , v.1 + n.1 * normal_scale
+                  , v.2 + n.2 * normal_scale
+                  )
                 in (p0, p1))
              indexed_verts
              (normals |> sized i)
@@ -202,4 +230,5 @@ module CustomRenderSetup (T: TriangleRasterizerSpec) : RenderSetupSpec = \(V: Va
          case _ -> assert false (target_buffer, depth_buffer)
   }
 
-module RenderSetup : RenderSetupSpec = CustomRenderSetup HybridPinedaTriangleRasterizer
+module RenderSetup : RenderSetupSpec =
+  CustomRenderSetup HybridPinedaTriangleRasterizer

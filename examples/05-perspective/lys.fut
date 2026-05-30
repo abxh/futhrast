@@ -250,7 +250,7 @@ module lys : lys with text_content = lys_text_content.text_content = {
     let verts' = zip (sized n (map (\i -> s.verts[i]) s.inds)) (sized n s.normals)
     let s = s with verts_avg_pos.0 = f32.sum (map (.0) s.verts) / f32.i64 (length s.verts)
     let s = s with verts_avg_pos.2 = f32.sum (map (.2) s.verts) / f32.i64 (length s.verts)
-    in (tabulate_2d s.h s.w (const (const (argb.black))), tabulate_2d s.h s.w (const (const f32.lowest)))
+    in (tabulate_2d s.h s.w (const (const (argb.black))), tabulate_2d s.h s.w (const (const 0)))
        |> RV.render render_config
                     s
                     { primitive_type = #triangles

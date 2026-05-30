@@ -1,7 +1,5 @@
 -- immediate-mode scanline triangle rasterizer
 
--- todo: remove the rounding error workaround
-
 import "../../../diku-dk/segmented/segmented"
 
 import "../fragment"

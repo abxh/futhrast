@@ -6,7 +6,6 @@ import "../../../diku-dk/sorts/radix_sort"
 
 import "../utils/bitmask"
 import "../utils/flatten2d"
-import "../utils/encode_f32"
 
 import "../fragment"
 import "../varying"
@@ -76,9 +75,10 @@ module CustomHybridPinedaTriangleRasterizer (O: HybridPinedaTriangleRasterizerOp
     local def num_intrablocks : i64 = 1 << num_intrablocks_shift
     local def small_triangle_size : i64 = 1 << small_triangle_size_shift
 
-    def encode_depth d = encode_f32 d
+    def tri_max_count: i64 = (1 << 33) - 1
+    def encode_depth d = f32.to_bits d
     def encode_depth_index d tri_index = (u64.u32 (encode_depth d) << 33) | (u64.i64 (tri_index + 1) & ((1 << 33) - 1))
-    def decode_depth dvis = dvis >> 33 |> u32.u64 |> decode_f32
+    def decode_depth dvis = dvis >> 33 |> u32.u64 |> f32.from_bits
     def decode_index dvis = dvis & ((1 << 33) - 1) |> i64.u64 |> (i64.- 1)
     def ne_dvis = encode_depth_index 0 (-1)
 
@@ -218,9 +218,9 @@ module CustomHybridPinedaTriangleRasterizer (O: HybridPinedaTriangleRasterizerOp
              else tri_overlaps_bbox tile_bbox wzero wdelta
         let mask = coarse_mask.from_pred_seq f
         in (bin_index, mask)
-      let sz (_, (_, mask)) = coarse_mask.size mask
+      let sz (_, (_, mask)) = coarse_mask.rank mask
       let get (tri_index, (bin_index, mask)) set_tile_index =
-        let tile_index = coarse_mask.find_ith_set_bit mask set_tile_index
+        let tile_index = coarse_mask.select mask set_tile_index
         let tile_id = (u32.u16 bin_index << u32.i64 (2 * coarse_shift)) + u32.i64 tile_index
         in (tile_id, tri_idxs[tri_index])
       in zip bin_idxs tri_idxs
@@ -301,10 +301,10 @@ module CustomHybridPinedaTriangleRasterizer (O: HybridPinedaTriangleRasterizerOp
           for pos in 0..<bbox_size do
             small_triangle_mask.set b pos (g pos)
         in (bbox, tri_index, mask)
-      let sz ((_, _, mask)) = small_triangle_mask.size mask
+      let sz ((_, _, mask)) = small_triangle_mask.rank mask
       let get ((bbox, tri_index, mask)) set_bbox_index =
         let bbox_w = bbox.xmax - bbox.xmin
-        let bbox_index = small_triangle_mask.find_ith_set_bit mask set_bbox_index
+        let bbox_index = small_triangle_mask.select mask set_bbox_index
         let bbox_x = bbox_index %% bbox_w
         let bbox_y = bbox_index / bbox_w
         let x = bbox_x + bbox.xmin
@@ -435,7 +435,7 @@ module CustomHybridPinedaTriangleRasterizer (O: HybridPinedaTriangleRasterizerOp
                   (tris: [n](fragment V.t, fragment V.t, fragment V.t)) : ([h][w]target, [h][w]f32) =
       let ne_target = copy target_buffer[0, 0]
       let dvis_buffer = map (map (\v -> encode_depth_index v (-1))) depth_buffer
-      let tris = (assert (n < (1 << 33) - 1) tris) |> map ensure_cclockwise_winding_order
+      let tris = (assert (n < tri_max_count) tris) |> map ensure_cclockwise_winding_order
       let tri_infos =
         tris
         |> map (\(f0, f1, f2) ->

@@ -44,10 +44,7 @@ module lys : lys = {
   def render (s: lys_state) : [][]argb.colour =
     let render_config: render_config =
       { triangle_winding_order = #counterclockwise
-      , flip_y = false
-      , depth_type = #normal_z
       }
-    let ne_depth = f32.inf
     let v0 = ({x = 2 / 4, y = 1 / 4}, argb.red)
     let v1 = ({x = 3 / 4, y = 3 / 4}, argb.blue)
     let v2 = ({x = 1 / 4, y = 3 / 4}, argb.green)
@@ -55,7 +52,7 @@ module lys : lys = {
       let pos = {x = (x - 0.5) * 2, y = (y - 0.5) * 2, z = 0, w = 1}
       in {pos, attr = colour}
     let on_fragment () f: argb.colour = f.attr
-    in init_framebuffer {w = s.w, h = s.h} (argb.black, ne_depth)
+    in (tabulate_2d s.h s.w (const (const (argb.black))), tabulate_2d s.h s.w (const (const 0)))
        |> R.render render_config
                    ()
                    { primitive_type = #triangles
@@ -64,5 +61,5 @@ module lys : lys = {
                    }
                    on_vertex
                    on_fragment
-       |> (.target_buffer)
+       |> (.0)
 }

@@ -213,9 +213,9 @@ module CustomTiledPinedaTriangleRasterizer (O: TiledPinedaTriangleRasterizerOpti
              else tri_overlaps_bbox tile_bbox wzero wdelta
         let mask = coarse_mask.from_pred_seq f
         in (bin_index, mask)
-      let sz (_, (_, mask)) = coarse_mask.size mask
+      let sz (_, (_, mask)) = coarse_mask.rank mask
       let get (tri_index, (bin_index, mask)) set_tile_index =
-        let tile_index = coarse_mask.find_ith_set_bit mask set_tile_index
+        let tile_index = coarse_mask.select mask set_tile_index
         let tile_id = (u32.u16 bin_index << u32.i64 (2 * coarse_shift)) + u32.i64 tile_index
         in (tile_id, tri_idxs[tri_index])
       in zip bin_idxs tri_idxs

@@ -3,59 +3,48 @@ import "../varying"
 
 local
 -- | point rasterizer specfication
-module type PointRasterizerSpec =
-  (V: VaryingSpec)
-  -> {
-    val rasterize 'target [n] [h] [w] :
-      (plot: fragment V.t -> target)
-      -> ([h][w]target, [h][w]f32)
-      -> [n]fragment V.t
-      -> ([h][w]target, [h][w]f32)
-  }
+module type PointRasterizerSpec = {
+  val rasterize 'varying 'target [n] [h] [w] :
+    (plot: fragment varying -> target)
+    -> ([h][w]target, [h][w]f32)
+    -> [n]fragment varying
+    -> ([h][w]target, [h][w]f32)
+}
 
 -- | point rasterizer
-module PointRasterizer : PointRasterizerSpec = \(V: VaryingSpec) ->
-  {
-    def unpack_fragment (f: fragment V.t) =
-      let y = i64.f32 (f.pos.y + 0.5)
-      let x = i64.f32 (f.pos.x + 0.5)
-      in ((y, x), f, f.depth)
+module PointRasterizer : PointRasterizerSpec = {
+  def unpack_fragment 'varying (f: fragment varying) =
+    let y = i64.f32 (f.pos.y + 0.5)
+    let x = i64.f32 (f.pos.x + 0.5)
+    in ((y, x), f, f.depth)
 
-    def rasterize 'target [n] [h] [w]
-                  (plot: (fragment V.t -> target))
-                  ((target_buffer, depth_buffer): ([h][w]target, [h][w]f32))
-                  (frags: [n]fragment V.t) : ([h][w]target, [h][w]f32) =
-      let ne_target = copy target_buffer[0, 0]
-      let (is, frag_values, depth_values) =
-        frags
-        |> map unpack_fragment
-        |> unzip3
-      let depth_buffer = reduce_by_index_2d (copy depth_buffer) f32.max 0 is depth_values
-      let (is, target_values) =
-        zip is frag_values
-        |> map (\((y, x), f) ->
-                  if (0 <= x && x < w) && (0 <= y && y < h) && depth_buffer[y, x] == f.depth
-                  then ((y, x), plot f)
-                  else ((-1, -1), ne_target))
-        |> unzip2
-      let target_buffer = scatter_2d (copy target_buffer) is target_values
-      in (target_buffer, depth_buffer)
-  }
+  def rasterize 'varying 'target [n] [h] [w]
+                (plot: (fragment varying -> target))
+                ((target_buffer, depth_buffer): ([h][w]target, [h][w]f32))
+                (frags: [n]fragment varying) : ([h][w]target, [h][w]f32) =
+    let ne_target = copy target_buffer[0, 0]
+    let (is, frag_values, depth_values) =
+      frags
+      |> map unpack_fragment
+      |> unzip3
+    let depth_buffer =
+      reduce_by_index_2d (copy depth_buffer) f32.max 0 is depth_values
+    let (is, target_values) =
+      zip is frag_values
+      |> map (\((y, x), f) ->
+                if (0 <= x && x < w) && (0 <= y && y < h)
+                && depth_buffer[y, x] == f.depth
+                then ((y, x), plot f)
+                else ((-1, -1), ne_target))
+      |> unzip2
+    let target_buffer = scatter_2d (copy target_buffer) is target_values
+    in (target_buffer, depth_buffer)
+}
 
 -- point rasterizer for testing purposes. can use the REPL for this
 local
 module PointRasterizerTest = {
-  local
-  module V : VaryingSpec with t = bool = {
-    type t = bool
-    def (+) = (||)
-    def (*) s x = if bool.f32 s then x else false
-  }
-
-  -- note: above do not satisfy all the algrebraic properties required for varying,
-  -- but is defined such for testing purposes
-
-  local module M = PointRasterizer V
+  local module M = PointRasterizer
 
   def test_rasterize_point [n] (h: i64) (w: i64) (vs: [n](f32, f32)) : [h][w]i32 =
     let target_buffer = replicate h (replicate w false)

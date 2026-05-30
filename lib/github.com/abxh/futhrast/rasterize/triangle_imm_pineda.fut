@@ -197,9 +197,9 @@ module CustomImmPinedaTriangleRasterizer (O: ImmPinedaTriangleRasterizerOptions)
              && w.z fixedpoint.>= (fixedpoint.i64 0)
         let mask = fine_mask.from_pred_seq g
         in ({tile_xmin, tile_ymin}, tri_index, mask)
-      let sz ((_, _, mask)) = fine_mask.size mask
+      let sz ((_, _, mask)) = fine_mask.rank mask
       let get (({tile_xmin, tile_ymin}, tri_index, mask)) set_pixel_index =
-        let pixel_index = fine_mask.find_ith_set_bit mask set_pixel_index
+        let pixel_index = fine_mask.select mask set_pixel_index
         let pixel_x = pixel_index & (fine_size - 1)
         let pixel_y = pixel_index >> fine_shift
         let x = pixel_x + tile_xmin
@@ -252,9 +252,9 @@ module CustomImmPinedaTriangleRasterizer (O: ImmPinedaTriangleRasterizerOptions)
              else tri_overlaps_bbox tile_bbox wzero wdelta
         let mask = coarse_mask.from_pred_seq f
         in (bin_index, mask)
-      let sz (_, (_, mask)) = coarse_mask.size mask
+      let sz (_, (_, mask)) = coarse_mask.rank mask
       let get (tri_index, (bin_index, mask)) set_tile_index =
-        let tile_index = coarse_mask.find_ith_set_bit mask set_tile_index
+        let tile_index = coarse_mask.select mask set_tile_index
         let tile_id = (u32.u16 bin_index << u32.i64 (2 * coarse_shift)) + u32.i64 tile_index
         in (tile_id, tri_idxs[tri_index])
       in zip bin_idxs tri_idxs
@@ -338,10 +338,10 @@ module CustomImmPinedaTriangleRasterizer (O: ImmPinedaTriangleRasterizerOptions)
           for pos in 0..<bbox_size do
             small_triangle_mask.set b pos (g pos)
         in (bbox, tri_index, mask)
-      let sz ((_, _, mask)) = small_triangle_mask.size mask
+      let sz ((_, _, mask)) = small_triangle_mask.rank mask
       let get ((bbox, tri_index, mask)) set_bbox_index =
         let bbox_w = bbox.xmax - bbox.xmin
-        let bbox_index = small_triangle_mask.find_ith_set_bit mask set_bbox_index
+        let bbox_index = small_triangle_mask.select mask set_bbox_index
         let bbox_x = bbox_index %% bbox_w
         let bbox_y = bbox_index / bbox_w
         let x = bbox_x + bbox.xmin
