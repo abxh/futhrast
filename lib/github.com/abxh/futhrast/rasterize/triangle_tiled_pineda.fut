@@ -6,11 +6,9 @@ import "../../../diku-dk/sorts/radix_sort"
 
 import "../utils/bitmask"
 import "../utils/flatten2d"
-import "../utils/encode_f32"
 
 import "../fragment"
 import "../varying"
-
 import "../math/vec"
 import "../math/fixedpoint"
 
@@ -71,9 +69,10 @@ module CustomTiledPinedaTriangleRasterizer (O: TiledPinedaTriangleRasterizerOpti
     local def coarse_size : i64 = 1 << coarse_shift
     local def num_intrablocks : i64 = 1 << num_intrablocks_shift
 
-    def encode_depth d = encode_f32 d
+    def highest_tri_count : i64 = (1 << 33) - 1
+    def encode_depth d = f32.to_bits d
     def encode_depth_index d tri_index = (u64.u32 (encode_depth d) << 33) | (u64.i64 (tri_index + 1) & ((1 << 33) - 1))
-    def decode_depth dvis = dvis >> 33 |> u32.u64 |> decode_f32
+    def decode_depth dvis = dvis >> 33 |> u32.u64 |> f32.from_bits
     def decode_index dvis = dvis & ((1 << 33) - 1) |> i64.u64 |> (i64.- 1)
     def ne_dvis = encode_depth_index 0 (-1)
 
@@ -187,15 +186,13 @@ module CustomTiledPinedaTriangleRasterizer (O: TiledPinedaTriangleRasterizerOpti
     def coarse_rasterize [n]
                          bin_index_setup
                          tile_index_setup
-                         {h = h: i64, w = w: i64}
                          (tris: []triangle)
                          ((bin_idxs, tri_idxs): ([n]u16, [n]i64)) =
       let f (bin_index, tri_index) =
-        let (f0, f1, f2) = tris[tri_index]
-        let tri_bbox = calc_tri_bbox (f0, f1, f2)
         let (bin_y, bin_x) = bin_pattern.unflatten bin_index_setup (i64.u16 bin_index)
         let bin_xmin = bin_x << bin_shift
         let bin_ymin = bin_y << bin_shift
+        let (f0, f1, f2) = tris[tri_index]
         let verts = (f0.pos, f1.pos, f2.pos)
         let wzero = calc_wcoeffs verts {x = 0, y = 0}
         let wdelta = calc_wdelta verts
@@ -207,10 +204,7 @@ module CustomTiledPinedaTriangleRasterizer (O: TiledPinedaTriangleRasterizerOpti
             let xmax = xmin + fine_size
             let ymax = ymin + fine_size
             in {xmin, ymin, xmax, ymax}
-          in if !bbox_overlaps tile_bbox {xmin = 0, ymin = 0, xmax = w, ymax = h}
-             || !bbox_overlaps tile_bbox tri_bbox
-             then false
-             else tri_overlaps_bbox tile_bbox wzero wdelta
+          in tri_overlaps_bbox tile_bbox wzero wdelta
         let mask = coarse_mask.from_pred_seq f
         in (bin_index, mask)
       let sz (_, (_, mask)) = coarse_mask.rank mask
@@ -226,17 +220,8 @@ module CustomTiledPinedaTriangleRasterizer (O: TiledPinedaTriangleRasterizerOpti
 
     def bin_rasterize [n]
                       bin_index_setup
-                      {h = h: i64, w = w: i64}
                       (tris: [n]triangle) =
-      let f tri_index =
-        let tri_bbox = calc_tri_bbox tris[tri_index]
-        let tri_bbox' =
-          let xmin = (tri_bbox.xmin `i64.max` 0)
-          let ymin = (tri_bbox.ymin `i64.max` 0)
-          let xmax = (tri_bbox.xmax `i64.min` w)
-          let ymax = (tri_bbox.ymax `i64.min` h)
-          in {xmin, ymin, xmax, ymax}
-        in (tri_index, tri_bbox')
+      let f tri_index = (tri_index, calc_tri_bbox tris[tri_index])
       let g (tri_index, tri_bbox) =
         let bin_bbox =
           let xmin = tri_bbox.xmin >> bin_shift
@@ -410,7 +395,7 @@ module CustomTiledPinedaTriangleRasterizer (O: TiledPinedaTriangleRasterizerOpti
                   ((target_buffer, depth_buffer): ([h][w]target, [h][w]f32))
                   (tris: [n](fragment V.t, fragment V.t, fragment V.t)) : ([h][w]target, [h][w]f32) =
       let (target_buffer, depth_buffer) = (copy target_buffer, copy depth_buffer)
-      let tris = (assert (n < (1 << 33) - 1) tris) |> map ensure_cclockwise_winding_order
+      let tris = (assert (n < highest_tri_count) tris) |> map ensure_cclockwise_winding_order
       let bins_w = round_up_pow2 <| (w + bin_size - 1) >> bin_shift
       let bins_h = round_up_pow2 <| (h + bin_size - 1) >> bin_shift
       let (bins_h, bins_w) = assert (bins_h * bins_w - 1 <= i64.u16 u16.highest) (bins_h, bins_w)
@@ -421,8 +406,8 @@ module CustomTiledPinedaTriangleRasterizer (O: TiledPinedaTriangleRasterizerOpti
       let total_tiles = bins_w * bins_h * (coarse_size * coarse_size)
       let num_bits_to_sort = ilog2_ceil total_tiles
       let (tile_ids, tri_idxs) =
-        bin_rasterize bin_index_setup {h, w} tris
-        |> coarse_rasterize bin_index_setup tile_index_setup {h, w} tris
+        bin_rasterize bin_index_setup tris
+        |> coarse_rasterize bin_index_setup tile_index_setup tris
         |> uncurry zip
         |> radix_sort_by_key (.0) (i32.i64 num_bits_to_sort) u32.get_bit
         |> unzip

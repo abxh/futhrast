@@ -264,7 +264,7 @@ module lys : lys with text_content = lys_text_content.text_content = {
     f.attr
 
   def render (s: state) : [][]argb.colour =
-    let render_config: render_config = {triangle_winding_order = if s.inner_mode then #counterclockwise else #clockwise}
+    let render_config: render_config = {triangle_winding_order = if s.inner_mode then #clockwise else #counterclockwise}
     let (verts, inds) =
       match s.render_model
       case #bunny -> (s.verts_bunny, s.inds_bunny)

@@ -61,7 +61,7 @@ def on_fragment (_: state) (f: fragment Varying.t) : argb.colour =
 
 def main [n] (vx: [n]f32, vy: [n]f32, vz: [n]f32, inds: []i64) =
   let render_config: render_config =
-    { triangle_winding_order = #clockwise
+    { triangle_winding_order = #counterclockwise
     }
   let s: state =
     { w = 1024
@@ -73,7 +73,7 @@ def main [n] (vx: [n]f32, vy: [n]f32, vz: [n]f32, inds: []i64) =
     }
   let verts = zip3 vx vy vz
   let s = s with pos.2 = s.zmin + (f32.abs (reduce f32.max f32.lowest (map (.2) verts) - reduce f32.min f32.highest (map (.2) verts)))
-  in (tabulate_2d s.h s.w (const (const (argb.black))), tabulate_2d s.h s.w (const (const f32.lowest)))
+  in (tabulate_2d s.h s.w (const (const (argb.black))), tabulate_2d s.h s.w (const (const 0)))
      |> R.render_wireframe render_config
                            s
                            { primitive_type = #triangles
