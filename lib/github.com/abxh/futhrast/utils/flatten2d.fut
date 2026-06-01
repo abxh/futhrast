@@ -2,6 +2,7 @@
 --
 -- based on:
 -- https://www.tugraz.at/fileadmin/user_upload/Institute/ICG/Downloads/team_steinberger/Publications/EffectiveStaticBinPatternsForSortMiddleRendering.pdf
+-- https://fgiesen.wordpress.com/2011/01/17/texture-tiling-and-swizzling/
 
 module type index_pattern = {
   type~ t

@@ -194,7 +194,7 @@ module CustomImmPinedaTriangleRasterizer (O: ImmPinedaTriangleRasterizerOptions)
           in w.x fixedpoint.>= (fixedpoint.i64 0)
              && w.y fixedpoint.>= (fixedpoint.i64 0)
              && w.z fixedpoint.>= (fixedpoint.i64 0)
-        let mask = fine_mask.from_pred_seq g
+        let mask = fine_mask.from_pred g
         in ({tile_xmin, tile_ymin}, tri_index, mask)
       let sz ((_, _, mask)) = fine_mask.rank mask
       let get (({tile_xmin, tile_ymin}, tri_index, mask)) set_pixel_index =
@@ -245,7 +245,7 @@ module CustomImmPinedaTriangleRasterizer (O: ImmPinedaTriangleRasterizerOptions)
             let ymax = ymin + fine_size
             in {xmin, ymin, xmax, ymax}
           in tri_overlaps_bbox tile_bbox wzero wdelta
-        let mask = coarse_mask.from_pred_seq f
+        let mask = coarse_mask.from_pred f
         in (bin_index, mask)
       let sz (_, (_, mask)) = coarse_mask.rank mask
       let get (tri_index, (bin_index, mask)) set_tile_index =
@@ -355,8 +355,13 @@ module CustomImmPinedaTriangleRasterizer (O: ImmPinedaTriangleRasterizerOptions)
     def rasterize 'target [h] [w] [n]
                   (plot: (fragment V.t -> target))
                   ((target_buffer, depth_buffer): ([h][w]target, [h][w]f32))
-                  (tris: [n](fragment V.t, fragment V.t, fragment V.t)) : ([h][w]target, [h][w]f32) =
-      let tris = (assert (n < highest_tri_count) tris) |> map ensure_cclockwise_winding_order
+                  (tris: [n]( fragment V.t
+                            , fragment V.t
+                            , fragment V.t
+                            )
+                  ) : ([h][w]target, [h][w]f32) =
+      let tris = assert (n < highest_tri_count) tris
+      let tris = tris |> map ensure_cclockwise_winding_order
       let ne_target = copy target_buffer[0, 0]
       let dvis_buffer = map (map (\v -> encode_depth_index v (-1))) depth_buffer
       let tri_infos =

@@ -211,7 +211,7 @@ module CustomHybridPinedaTriangleRasterizer (O: HybridPinedaTriangleRasterizerOp
             let ymax = ymin + fine_size
             in {xmin, ymin, xmax, ymax}
           in tri_overlaps_bbox tile_bbox wzero wdelta
-        let mask = coarse_mask.from_pred_seq f
+        let mask = coarse_mask.from_pred f
         in (bin_index, mask)
       let sz (_, (_, mask)) = coarse_mask.rank mask
       let get (tri_index, (bin_index, mask)) set_tile_index =
@@ -422,7 +422,8 @@ module CustomHybridPinedaTriangleRasterizer (O: HybridPinedaTriangleRasterizerOp
                   (tris: [n](fragment V.t, fragment V.t, fragment V.t)) : ([h][w]target, [h][w]f32) =
       let ne_target = copy target_buffer[0, 0]
       let dvis_buffer = map (map (\v -> encode_depth_index v (-1))) depth_buffer
-      let tris = (assert (n < highest_tri_count) tris) |> map ensure_cclockwise_winding_order
+      let tris = assert (n < highest_tri_count) tris
+      let tris = tris |> map ensure_cclockwise_winding_order
       let tri_infos =
         tris
         |> map (\(f0, f1, f2) ->

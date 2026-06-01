@@ -137,7 +137,8 @@ module ImmScanlineTriangleRasterizer : TriangleRasterizerSpec = \(V: VaryingSpec
                   (tris: [n](fragment V.t, fragment V.t, fragment V.t)) : ([h][w]target, [h][w]f32) =
       let ne_target = copy target_buffer[0, 0]
       let dvis_buffer = map (map (\v -> encode_depth_index v (-1))) depth_buffer
-      let tris = (assert (n < highest_tri_count) tris) |> map ensure_cclockwise_winding_order
+      let tris = assert (n < highest_tri_count) tris
+      let tris = tris |> map ensure_cclockwise_winding_order
       let (is, xs) =
         zip tris (indices tris)
         |> expand num_lines_in_triangle get_line_in_triangle

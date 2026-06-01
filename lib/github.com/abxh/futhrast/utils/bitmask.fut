@@ -83,11 +83,9 @@ module type bitmask = {
 
   val member : t -> i64 -> bool
   val set : t -> i64 -> bool -> t
-  val from_single_bit : i64 -> bool -> t
   val select : t -> i64 -> i64
 
-  val from_pred_seq : (i64 -> bool) -> t
-  val from_pred_par : (i64 -> bool) -> t
+  val from_pred : (i64 -> bool) -> t
   val to_array : t -> [num_bits]bool
 }
 
@@ -109,21 +107,12 @@ module bitmask_1 (T: integral) (F: {val select : T.t -> i64 -> i64}) : bitmask =
 
   def member (b: t) (pos: i64) = T.get_bit (i32.i64 pos) b i32.== 1
   def set (b: t) (pos: i64) (v: bool) = T.set_bit (i32.i64 pos) b (i32.bool v)
-  def from_single_bit (pos: i64) (v: bool) : t = (T.<<) (T.bool v) (T.i64 pos)
-
   def select = F.select
 
-  def from_pred_seq (f: i64 -> bool) : t =
+  def from_pred (f: i64 -> bool) : t =
     loop b = empty
     for pos in 0..<num_bits do
       set b pos (f pos)
-
-  def from_pred_par (f: i64 -> bool) : t =
-    iota num_bits
-    |> map f
-    |> zip (iota num_bits)
-    |> map (uncurry from_single_bit)
-    |> reduce_comm union empty
 
   def to_array (b: t) : []bool =
     tabulate num_bits (member b)
@@ -136,7 +125,7 @@ module cat_bitmask (L: bitmask) (R: bitmask) : bitmask = {
   def num_bits = L.num_bits + R.num_bits
   def empty = (L.empty, R.empty)
   def is_empty (l, r) = L.is_empty l && R.is_empty r
-  def rank (l, r) = L.rank l + R.rank r
+  def rank ((l, r): (L.t, R.t)) = L.rank l + R.rank r
 
   def complement (l, r) = (L.complement l, R.complement r)
   def union (l0, r0) (l1, r1) = (l0 `L.union` l1, r0 `R.union` r1)
@@ -150,33 +139,23 @@ module cat_bitmask (L: bitmask) (R: bitmask) : bitmask = {
     then L.member l pos
     else R.member r (pos - L.num_bits)
 
-  def set (l, r) (pos: i64) (v: bool) =
+  def set ((l, r): (L.t, R.t)) (pos: i64) (v: bool) =
     if pos < L.num_bits
     then (L.set l pos v, r)
     else (l, R.set r (pos - L.num_bits) v)
 
-  def from_single_bit (pos: i64) (v: bool) : t =
-    if pos < L.num_bits
-    then (L.from_single_bit pos v, R.empty)
-    else (L.empty, R.from_single_bit (pos - L.num_bits) v)
-
-  def select (l, r) (i: i64) : i64 =
+  def select ((l, r): (L.t, R.t)) (i: i64) : i64 =
     let l_rank = L.rank l
     in if i < l_rank
        then L.select l i
        else R.select r (i - l_rank) + L.num_bits
 
-  def from_pred_seq (f: i64 -> bool) : t =
+  def from_pred (f: i64 -> bool) : t =
     let l_pred i = f i
     let r_pred i = f (i + L.num_bits)
-    in ( L.from_pred_seq l_pred
-       , R.from_pred_seq r_pred
+    in ( L.from_pred l_pred
+       , R.from_pred r_pred
        )
-
-  def from_pred_par (f: i64 -> bool) : t =
-    let l_pred i = f i
-    let r_pred i = f (i + L.num_bits)
-    in (L.from_pred_par l_pred, R.from_pred_par r_pred)
 
   def to_array (b: t) : []bool =
     tabulate num_bits (member b)
