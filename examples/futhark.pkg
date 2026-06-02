@@ -1,6 +1,6 @@
 package github.com/abxh/futhrast/examples
 
 require {
-  github.com/abxh/lys 0.0.0-20260512162636+8ac7e97dcad93f33f1e57a66fa3b9ad9cca55ffe
+  github.com/abxh/lys 0.0.0-20260601011104+a1a693f277de93eb1fc2bcc759e1843bf70a2a5b
   github.com/diku-dk/cpprandom 1.5.0 #ec96adc06f7a91040b2c1f7f9fdc56b9b2e9f3a3
 }

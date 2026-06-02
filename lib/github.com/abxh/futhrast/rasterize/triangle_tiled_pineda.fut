@@ -4,7 +4,9 @@
 import "../../../diku-dk/segmented/segmented"
 import "../../../diku-dk/sorts/radix_sort"
 
-import "../utils/bitmask"
+import "../../../abxh/expand_masked/expand_masked"
+import "../../../abxh/expand_masked/bitmask"
+
 import "../utils/flatten2d"
 
 import "../fragment"
@@ -68,6 +70,9 @@ module CustomTiledPinedaTriangleRasterizer (O: TiledPinedaTriangleRasterizerOpti
     local def fine_size : i64 = 1 << fine_shift
     local def coarse_size : i64 = 1 << coarse_shift
     local def num_intrablocks : i64 = 1 << num_intrablocks_shift
+
+    local module expand_masked_coarse = expand_masked_generic coarse_mask
+    local def expand_masked_coarse = expand_masked_coarse.expand_masked
 
     def highest_tri_count : i64 = (1 << 33) - 1
     def encode_depth d = f32.to_bits d
@@ -188,7 +193,10 @@ module CustomTiledPinedaTriangleRasterizer (O: TiledPinedaTriangleRasterizerOpti
                          tile_index_setup
                          (tris: []triangle)
                          ((bin_idxs, tri_idxs): ([n]u16, [n]i64)) =
-      let f (bin_index, tri_index) =
+      let get (bin_index, tri_index) tile_index =
+        let tile_id = (u32.u16 bin_index << u32.i64 (2 * coarse_shift)) + u32.i64 tile_index
+        in (tile_id, tri_index)
+      let pred (bin_index, tri_index) (tile_index: i64) =
         let (bin_y, bin_x) = bin_pattern.unflatten bin_index_setup (i64.u16 bin_index)
         let bin_xmin = bin_x << bin_shift
         let bin_ymin = bin_y << bin_shift
@@ -196,26 +204,16 @@ module CustomTiledPinedaTriangleRasterizer (O: TiledPinedaTriangleRasterizerOpti
         let verts = (f0.pos, f1.pos, f2.pos)
         let wzero = calc_wcoeffs verts {x = 0, y = 0}
         let wdelta = calc_wdelta verts
-        let f (tile_index: i64) =
-          let tile_bbox =
-            let (tile_y, tile_x) = coarse_pattern.unflatten tile_index_setup tile_index
-            let xmin = (tile_x << fine_shift) + bin_xmin
-            let ymin = (tile_y << fine_shift) + bin_ymin
-            let xmax = xmin + fine_size
-            let ymax = ymin + fine_size
-            in {xmin, ymin, xmax, ymax}
-          in tri_overlaps_bbox tile_bbox wzero wdelta
-        let mask = coarse_mask.from_pred f
-        in (bin_index, mask)
-      let sz (_, (_, mask)) = coarse_mask.rank mask
-      let get (tri_index, (bin_index, mask)) set_tile_index =
-        let tile_index = coarse_mask.select mask set_tile_index
-        let tile_id = (u32.u16 bin_index << u32.i64 (2 * coarse_shift)) + u32.i64 tile_index
-        in (tile_id, tri_idxs[tri_index])
+        let tile_bbox =
+          let (tile_y, tile_x) = coarse_pattern.unflatten tile_index_setup tile_index
+          let xmin = (tile_x << fine_shift) + bin_xmin
+          let ymin = (tile_y << fine_shift) + bin_ymin
+          let xmax = xmin + fine_size
+          let ymax = ymin + fine_size
+          in {xmin, ymin, xmax, ymax}
+        in tri_overlaps_bbox tile_bbox wzero wdelta
       in zip bin_idxs tri_idxs
-         |> map f
-         |> zip (iota n)
-         |> expand sz get
+         |> expand_masked_coarse (\(_, _) -> coarse_mask.num_bits) get pred
          |> unzip
 
     def bin_rasterize [n]

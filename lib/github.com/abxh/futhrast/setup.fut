@@ -12,9 +12,9 @@ open import "fragment"
 open import "misc"
 open import "rasterize/point"
 open import "rasterize/line"
-open import "rasterize/triangle_imm_scanline"
 open import "rasterize/triangle_imm_pineda"
 open import "rasterize/triangle_tiled_pineda"
+open import "rasterize/triangle_imm_scanline"
 open import "rasterize/triangle_hybrid_pineda"
 
 -- | renderer configuration options
