@@ -53,7 +53,7 @@ def test_line_bounds 'varying ((f0, f1): (vertex_out varying, vertex_out varying
   let f i (t0, t1) =
     let d0 = plane_dist i f0.pos
     let d1 = plane_dist i f1.pos
-    let p = d1 - d0
+    let p = d0 - d1
     let q = d0
     in line_in_bounds_1d q p t0 t1
   in (loop (i, (accept, res)) = (0, (true, (0, 1)))
@@ -111,7 +111,9 @@ local
 #[inline]
 def safe_clip_t_value (da: f32) (db: f32) : f32 =
   let denom = da - db
-  in if f32.abs denom < clip_eps then 0 else da / denom
+  in if f32.abs denom < clip_eps
+     then da / (f32.sgn da * clip_eps)
+     else da / denom
 
 local
 -- | Sutherland-Hodgeman Algorithm
@@ -143,9 +145,10 @@ def clip_against_plane 'varying
        else if !a_in && b_in
        then let t = safe_clip_t_value fa fb
             let intersection = lerp_vertex a b t
+            let tmp_count = out.count
             in out with count = out.count + 2
-                   with verts[out.count] = intersection
-                   with verts[out.count + 1] = b
+                   with verts[tmp_count] = intersection
+                   with verts[tmp_count + 1] = b
        else out
 
 def clip_triangles 'varying
