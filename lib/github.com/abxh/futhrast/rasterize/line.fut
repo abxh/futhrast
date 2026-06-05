@@ -100,9 +100,9 @@ module LineRasterizerTest = {
 
   local module M = LineRasterizer (V)
 
-  def rasterize_line_demo [n] (h: i64) (w: i64) (vs: [n]((f32, f32), (f32, f32))) : [h][w]i32 =
+  def test_line [n] (h: i64) (w: i64) (vs: [n]((f32, f32), (f32, f32))) : [h][w]i32 =
     let target_buffer = replicate h (replicate w false)
-    let depth_buffer = replicate h (replicate w (-f32.inf))
+    let depth_buffer = replicate h (replicate w 0)
     let frags =
       vs
       |> map (\(f0, f1) ->

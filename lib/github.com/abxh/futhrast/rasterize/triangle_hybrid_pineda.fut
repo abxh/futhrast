@@ -505,9 +505,9 @@ module HybridPinedaTriangleRasterizerTest = {
     let frags =
       vs
       |> map (\(f0, f1, f2) ->
-                ( {pos = {x = f0.0, y = f0.1}, depth = 0, Z_inv = 1, attr = true}
-                , {pos = {x = f1.0, y = f1.1}, depth = 0, Z_inv = 1, attr = true}
-                , {pos = {x = f2.0, y = f2.1}, depth = 0, Z_inv = 1, attr = true}
+                ( {pos = {x = f0.0, y = f0.1}, depth = 1, Z_inv = 1, attr = true}
+                , {pos = {x = f1.0, y = f1.1}, depth = 1, Z_inv = 1, attr = true}
+                , {pos = {x = f2.0, y = f2.1}, depth = 1, Z_inv = 1, attr = true}
                 ))
     let plot = (\(f: fragment bool) -> f.attr)
     in M.rasterize plot (target_buffer, depth_buffer) frags

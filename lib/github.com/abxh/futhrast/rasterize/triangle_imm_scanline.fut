@@ -84,49 +84,37 @@ module ImmScanlineTriangleRasterizer : TriangleRasterizerSpec = \(V: VaryingSpec
       let (v0, v1) = bubble v0 v1
       in (v0, v1, v2)
 
-    def dxdy (a: vec2i32.t) (b: vec2i32.t) : f32 =
-      let dx = b.x - a.x
-      let dy = b.y - a.y
-      in if dy == 0 then 0 else f32.i32 dx / f32.i32 dy
-
     def num_lines_in_triangle ( ((f0, f1, f2): (fragment V.t, fragment V.t, fragment V.t))
                               , (_: i64)
                               ) : i64 =
-      let (v0, v1, v2) = sort_y_ascending (f0.pos, f1.pos, f2.pos)
-      let top = i64.f32 (v2.y + 0.5)
-      let middle = i64.f32 (v1.y + 0.5)
-      let bottom = i64.f32 (v0.y + 0.5)
-      -- fullfill top-left edge rule by excluding bottom edge
-      let offset = i64.bool (bottom == middle)
-      in offset + top - bottom
+      let (v0, _, v2) = sort_y_ascending (f0.pos, f1.pos, f2.pos)
+      let top = i64.f32 v2.y
+      let bottom = i64.f32 v0.y
+      in top - bottom
+
+    def edge_intersect_x (a: vec2i32.t) (b: vec2i32.t) (y: i32) : i32 =
+      let dy = b.y - a.y
+      let dx = b.x - a.x
+      in if dy == 0 then a.x else a.x + (dx * (y - a.y)) / dy
 
     def get_line_in_triangle ( ((f0, f1, f2): (fragment V.t, fragment V.t, fragment V.t))
                              , (tri_index: i64)
                              )
                              (i: i64) =
-      let (v0, v1, v2) = sort_y_ascending (f0.pos, f1.pos, f2.pos)
-      let (v0, v1, v2) =
-        ( vec2f.map i32.f32 (v0 vec2f.+ vec2f.replicate 0.5)
-        , vec2f.map i32.f32 (v1 vec2f.+ vec2f.replicate 0.5)
-        , vec2f.map i32.f32 (v2 vec2f.+ vec2f.replicate 0.5)
-        )
+      let (v0, v1, v2) = (f0.pos, f1.pos, f2.pos)
+      let (v0, v1, v2) = sort_y_ascending (v0, v1, v2)
+      let (v0, v1, v2) = (vec2f.map i32.f32 v0, vec2f.map i32.f32 v1, vec2f.map i32.f32 v2)
       let y = v0.y + i32.i64 i
       in if y < v1.y
          then -- upper half
-              let sl0 = dxdy v0 v1
-              let sl1 = dxdy v0 v2
-              let dy = y - v0.y
-              let p0x = v0.x + i32.f32 (f32.floor (sl0 * f32.i32 dy + 0.5))
-              let p1x = v0.x + i32.f32 (f32.floor (sl1 * f32.i32 dy + 0.5))
+              let p0x = edge_intersect_x v0 v1 y
+              let p1x = edge_intersect_x v0 v2 y
               let plx = i32.min p0x p1x
               let prx = i32.max p0x p1x
               in (({x = plx, y}, {x = prx, y}), tri_index)
          else -- lower half
-              let sl0 = dxdy v1 v2
-              let sl1 = dxdy v0 v2
-              let dy = y - v1.y
-              let p0x = v1.x + i32.f32 (f32.floor (sl0 * f32.i32 dy + 0.5))
-              let p1x = v0.x + i32.f32 (f32.floor (sl1 * f32.i64 i + 0.5))
+              let p0x = edge_intersect_x v1 v2 y
+              let p1x = edge_intersect_x v0 v2 y
               let plx = i32.min p0x p1x
               let prx = i32.max p0x p1x
               in (({x = plx, y}, {x = prx, y}), tri_index)
@@ -193,9 +181,9 @@ module ImmScanlineTriangleRasterizerTest = {
     let frags =
       vs
       |> map (\(f0, f1, f2) ->
-                ( {pos = {x = f0.0, y = f0.1}, depth = 0, Z_inv = 1, attr = true}
-                , {pos = {x = f1.0, y = f1.1}, depth = 0, Z_inv = 1, attr = true}
-                , {pos = {x = f2.0, y = f2.1}, depth = 0, Z_inv = 1, attr = true}
+                ( {pos = {x = f0.0, y = f0.1}, depth = 1, Z_inv = 1, attr = true}
+                , {pos = {x = f1.0, y = f1.1}, depth = 1, Z_inv = 1, attr = true}
+                , {pos = {x = f2.0, y = f2.1}, depth = 1, Z_inv = 1, attr = true}
                 ))
     let plot = (\(f: fragment bool) -> f.attr)
     in M.rasterize plot (target_buffer, depth_buffer) frags

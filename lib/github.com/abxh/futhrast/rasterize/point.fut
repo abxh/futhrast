@@ -46,7 +46,7 @@ local
 module PointRasterizerTest = {
   local module M = PointRasterizer
 
-  def test_rasterize_point [n] (h: i64) (w: i64) (vs: [n](f32, f32)) : [h][w]i32 =
+  def test_point [n] (h: i64) (w: i64) (vs: [n](f32, f32)) : [h][w]i32 =
     let target_buffer = replicate h (replicate w false)
     let depth_buffer = replicate h (replicate w 0)
     let frags =

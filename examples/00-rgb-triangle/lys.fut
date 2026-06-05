@@ -49,7 +49,7 @@ module lys : lys = {
     let v1 = ({x = 3 / 4, y = 3 / 4}, argb.blue)
     let v2 = ({x = 1 / 4, y = 3 / 4}, argb.green)
     let on_vertex () (({x, y}, colour): ({x: f32, y: f32}, argb.colour)) =
-      let pos = {x = (x - 0.5) * 2, y = (y - 0.5) * 2, z = 0, w = 1}
+      let pos = {x = (x - 0.5) * 2, y = (y - 0.5) * 2, z = 1, w = 1}
       in {pos, attr = colour}
     let on_fragment () f: argb.colour = f.attr
     in (tabulate_2d s.h s.w (const (const (argb.black))), tabulate_2d s.h s.w (const (const 0)))
