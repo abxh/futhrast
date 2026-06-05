@@ -1,5 +1,5 @@
-HIP_ENV = C_INCLUDE_PATH=/opt/rocm/include:$${C_INCLUDE_PATH} \
-          LIBRARY_PATH=/opt/rocm/lib:$${LIBRARY_PATH}
+HIP_ENV = C_INCLUDE_PATH=/opt/rocm/include LIBRARY_PATH=/opt/rocm/lib
+CUDA_ENV = C_INCLUDE_PATH=/opt/cuda/include LIBRARY_PATH=/opt/cuda/lib
 
 all: build run
 
@@ -23,6 +23,8 @@ run_$(1):
 	futhark bench --backend=opencl $(1).fut
 
 	$(HIP_ENV) futhark bench --backend=hip $(1).fut
+
+	$(CUDA_ENV) futhark bench --backend=cuda $(1).fut
 
 	rm -f $(1).c $(1) $(1).fut.tuning
 endef

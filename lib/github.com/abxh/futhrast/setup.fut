@@ -1,7 +1,5 @@
 -- | setup vertices to pass to rasterizer
 
--- todo: add texture support
-
 import "../../diku-dk/segmented/segmented"
 
 import "math/vec"

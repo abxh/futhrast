@@ -97,7 +97,7 @@ module ImmScanlineTriangleRasterizer : TriangleRasterizerSpec = \(V: VaryingSpec
       let middle = i64.f32 (v1.y + 0.5)
       let bottom = i64.f32 (v0.y + 0.5)
       -- fullfill top-left edge rule by excluding bottom edge
-      let offset = i64.bool (bottom != middle)
+      let offset = i64.bool (bottom == middle)
       in offset + top - bottom
 
     def get_line_in_triangle ( ((f0, f1, f2): (fragment V.t, fragment V.t, fragment V.t))
@@ -111,7 +111,7 @@ module ImmScanlineTriangleRasterizer : TriangleRasterizerSpec = \(V: VaryingSpec
         , vec2f.map i32.f32 (v2 vec2f.+ vec2f.replicate 0.5)
         )
       let y = v0.y + i32.i64 i
-      in if y <= v1.y
+      in if y < v1.y
          then -- upper half
               let sl0 = dxdy v0 v1
               let sl1 = dxdy v0 v2
@@ -187,15 +187,15 @@ module ImmScanlineTriangleRasterizerTest = {
 
   local module M = ImmScanlineTriangleRasterizer (V)
 
-  def test_rasterize_triangle_imm_scanline [n] (h: i64) (w: i64) (vs: [n]((f32, f32), (f32, f32), (f32, f32))) : [h][w]i32 =
+  def test_triangle_imm_scanline [n] (h: i64) (w: i64) (vs: [n]((f32, f32), (f32, f32), (f32, f32))) : [h][w]i32 =
     let target_buffer = replicate h (replicate w false)
-    let depth_buffer = replicate h (replicate w (-f32.inf))
+    let depth_buffer = replicate h (replicate w 0)
     let frags =
       vs
       |> map (\(f0, f1, f2) ->
-                ( {pos = {x = f0.0, y = f0.1}, depth = 1, Z_inv = 1, attr = true}
-                , {pos = {x = f1.0, y = f1.1}, depth = 1, Z_inv = 1, attr = true}
-                , {pos = {x = f2.0, y = f2.1}, depth = 1, Z_inv = 1, attr = true}
+                ( {pos = {x = f0.0, y = f0.1}, depth = 0, Z_inv = 1, attr = true}
+                , {pos = {x = f1.0, y = f1.1}, depth = 0, Z_inv = 1, attr = true}
+                , {pos = {x = f2.0, y = f2.1}, depth = 0, Z_inv = 1, attr = true}
                 ))
     let plot = (\(f: fragment bool) -> f.attr)
     in M.rasterize plot (target_buffer, depth_buffer) frags

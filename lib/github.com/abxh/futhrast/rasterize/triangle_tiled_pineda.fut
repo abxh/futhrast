@@ -436,15 +436,15 @@ module TiledPinedaTriangleRasterizerTest = {
 
   local module M = TiledPinedaTriangleRasterizer V
 
-  def rasterize_triangle_tiled_test [n] (h: i64) (w: i64) (vs: [n]((f32, f32), (f32, f32), (f32, f32))) : [h][w]i32 =
+  def test_triangle_tiled_pineda [n] (h: i64) (w: i64) (vs: [n]((f32, f32), (f32, f32), (f32, f32))) : [h][w]i32 =
     let target_buffer = replicate h (replicate w false)
-    let depth_buffer = replicate h (replicate w (-f32.inf))
+    let depth_buffer = replicate h (replicate w 0)
     let frags =
       vs
       |> map (\(f0, f1, f2) ->
-                ( {pos = {x = f0.0, y = f0.1}, depth = 1, Z_inv = 1, attr = true}
-                , {pos = {x = f1.0, y = f1.1}, depth = 1, Z_inv = 1, attr = true}
-                , {pos = {x = f2.0, y = f2.1}, depth = 1, Z_inv = 1, attr = true}
+                ( {pos = {x = f0.0, y = f0.1}, depth = 0, Z_inv = 1, attr = true}
+                , {pos = {x = f1.0, y = f1.1}, depth = 0, Z_inv = 1, attr = true}
+                , {pos = {x = f2.0, y = f2.1}, depth = 0, Z_inv = 1, attr = true}
                 ))
     let plot = (\(f: fragment bool) -> f.attr)
     in M.rasterize plot (target_buffer, depth_buffer) frags
