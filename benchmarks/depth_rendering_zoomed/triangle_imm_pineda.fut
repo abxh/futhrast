@@ -1,7 +1,7 @@
 -- ==
 -- compiled input @ bunny.in
 -- compiled input @ monkey.in
--- compiled input @ african_head.in
+-- compiled input @ penger.in
 -- compiled input @ dragon.in
 -- compiled input @ lucy.in
 -- compiled input @ armadillo.in

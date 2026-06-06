@@ -22,18 +22,18 @@ type~ lys_state =
   , verts_armadillo: [](f32, f32, f32)
   , verts_bunny: [](f32, f32, f32)
   , verts_monkey: [](f32, f32, f32)
-  , verts_head: [](f32, f32, f32)
+  , verts_penger: [](f32, f32, f32)
   , verts_dragon: [](f32, f32, f32)
   , verts_lucy: [](f32, f32, f32)
   , inds_armadillo: []i64
   , inds_bunny: []i64
   , inds_monkey: []i64
-  , inds_head: []i64
+  , inds_penger: []i64
   , inds_dragon: []i64
   , inds_lucy: []i64
   , render_model:   #bunny
                   | #monkey
-                  | #head
+                  | #penger
                   | #dragon
                   | #lucy
                   | #armadillo
@@ -50,7 +50,7 @@ module lys_text_content = {
     ++ "\n"
     ++ "b: bunny\n"
     ++ "m: monkey\n"
-    ++ "h: african head\n"
+    ++ "p: penger\n"
     ++ "r: dragon\n"
     ++ "l: lucy\n"
     ++ "o: armadillo\n"
@@ -66,7 +66,7 @@ module lys_text_content = {
       match s.render_model
       case #bunny -> length s.inds_bunny / 3
       case #monkey -> length s.inds_monkey / 3
-      case #head -> length s.inds_head / 3
+      case #penger -> length s.inds_penger / 3
       case #dragon -> length s.inds_dragon / 3
       case #lucy -> length s.inds_lucy / 3
       case #armadillo -> length s.inds_armadillo / 3
@@ -80,7 +80,7 @@ module lys_file = {
     ""
     ++ "../../models/bunny.obj,"
     ++ "../../models/monkey.obj,"
-    ++ "../../models/african_head.obj,"
+    ++ "../../models/penger.obj,"
     ++ "../../models/dragon.obj,"
     ++ "../../models/lucy.obj,"
     ++ "../../models/armadillo.obj,"
@@ -94,7 +94,7 @@ module lys_file = {
     case 1 ->
       s with inds_monkey = is
     case 2 ->
-      s with inds_head = is
+      s with inds_penger = is
     case 3 ->
       s with inds_dragon = is
     case 4 ->
@@ -111,7 +111,7 @@ module lys_file = {
     case 1 ->
       s with verts_monkey = vs
     case 2 ->
-      s with verts_head = vs
+      s with verts_penger = vs
     case 3 ->
       s with verts_dragon = vs
     case 4 ->
@@ -157,13 +157,13 @@ module lys : lys with text_content = lys_text_content.text_content = {
        , inds_armadillo = replicate 0 (-1)
        , inds_bunny = replicate 0 (-1)
        , inds_monkey = replicate 0 (-1)
-       , inds_head = replicate 0 (-1)
+       , inds_penger = replicate 0 (-1)
        , inds_dragon = replicate 0 (-1)
        , inds_lucy = replicate 0 (-1)
        , verts_armadillo = replicate 0 (0, 0, 0)
        , verts_bunny = replicate 0 (0, 0, 0)
        , verts_monkey = replicate 0 (0, 0, 0)
-       , verts_head = replicate 0 (0, 0, 0)
+       , verts_penger = replicate 0 (0, 0, 0)
        , verts_dragon = replicate 0 (0, 0, 0)
        , verts_lucy = replicate 0 (0, 0, 0)
        , render_model = #bunny
@@ -178,8 +178,8 @@ module lys : lys with text_content = lys_text_content.text_content = {
     then s with render_model = #bunny
     else if key == SDLK_m
     then s with render_model = #monkey
-    else if key == SDLK_h
-    then s with render_model = #head
+    else if key == SDLK_p
+    then s with render_model = #penger
     else if key == SDLK_r
     then s with render_model = #dragon
     else if key == SDLK_l
@@ -280,7 +280,7 @@ module lys : lys with text_content = lys_text_content.text_content = {
       match s.render_model
       case #bunny -> (s.verts_bunny, s.inds_bunny)
       case #monkey -> (s.verts_monkey, s.inds_monkey)
-      case #head -> (s.verts_head, s.inds_head)
+      case #penger -> (s.verts_penger, s.inds_penger)
       case #dragon -> (s.verts_dragon, s.inds_dragon)
       case #lucy -> (s.verts_lucy, s.inds_lucy)
       case #armadillo -> (s.verts_armadillo, s.inds_armadillo)
