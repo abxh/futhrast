@@ -18,12 +18,7 @@ build:
 
 define RUN_TEMPLATE
 run_$(1):
-	futhark bench --backend=c $(1).fut
-
-	futhark bench --backend=multicore $(1).fut
-
 	$(HIP_ENV) futhark bench --backend=hip $(1).fut
-
 	rm -f $(1).c $(1) $(1).fut.tuning
 endef
 

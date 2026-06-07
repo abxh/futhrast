@@ -5,5 +5,5 @@ require {
   github.com/diku-dk/segmented 0.5.3 #c96450f95a1e43e0906366a1dab45cb18220a643
   github.com/diku-dk/sorts 0.7.2 #4dbe5a2e489fa11b397e2eaf167059376f0d628a
   github.com/diku-dk/linalg 0.6.5 #d7e197834b26050add8c8b3d747cf61fa2762bbb
-  github.com/abxh/expand_masked 0.0.0-20260602173437+ab6b71ccc5222ed20c3fe205ac45e70dc38fafb3
+  github.com/abxh/expand_masked 0.0.0-20260606105830+0894bda25511f694f7f7c4b36dbc0989eee5c62e
 }
