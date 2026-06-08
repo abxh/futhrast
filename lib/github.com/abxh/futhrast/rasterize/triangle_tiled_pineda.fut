@@ -33,7 +33,6 @@ module type TiledPinedaTriangleRasterizerOptions = {
 
   val bin_shift : i64
   val fine_shift : i64
-  val num_intrablocks_shift : i64
 }
 
 module TiledPinedaTriangleRasterizerDefaultOptions : TiledPinedaTriangleRasterizerOptions = {
@@ -43,7 +42,6 @@ module TiledPinedaTriangleRasterizerDefaultOptions : TiledPinedaTriangleRasteriz
 
   def bin_shift : i64 = 7
   def fine_shift : i64 = 4
-  def num_intrablocks_shift : i64 = 8
 }
 
 -- | tiled triangle rasterizer
@@ -69,7 +67,6 @@ module CustomTiledPinedaTriangleRasterizer (O: TiledPinedaTriangleRasterizerOpti
     local def bin_size : i64 = 1 << bin_shift
     local def fine_size : i64 = 1 << fine_shift
     local def coarse_size : i64 = 1 << coarse_shift
-    local def num_intrablocks : i64 = 1 << num_intrablocks_shift
 
     local module expand_masked_coarse = expand_masked_generic coarse_mask
     local def expand_masked_coarse = expand_masked_coarse.expand_masked
@@ -340,23 +337,12 @@ module CustomTiledPinedaTriangleRasterizer (O: TiledPinedaTriangleRasterizerOpti
            then y * w + x
            else -1
       let k = length unique_tile_ids
-      let num_phases = (k + num_intrablocks - 1) >> num_intrablocks_shift
       let dvis_buf =
-        loop dvis_buf = copy (flatten dvis_buffer)
-        for phase_index < num_phases do
-          let start = phase_index << num_intrablocks_shift
-          let end = (phase_index + 1) << num_intrablocks_shift `i64.min` k
-          let xs =
-            #[incremental_flattening(only_intra)]
-            iota (end - start)
-            |> map (+ start)
-            |> map f
-            |> flatten
-          let is =
-            iota ((end - start) * (fine_size * fine_size))
-            |> map (+ (start * (fine_size * fine_size)))
-            |> map g
-          in scatter dvis_buf is xs
+        let xs =
+          #[incremental_flattening(only_intra)]
+          tabulate k f |> flatten
+        let is = tabulate (k * (fine_size * fine_size)) g
+        in scatter (copy (flatten dvis_buffer)) is xs
       let (is, xs) =
         dvis_buf
         |> zip (iota (h * w))
