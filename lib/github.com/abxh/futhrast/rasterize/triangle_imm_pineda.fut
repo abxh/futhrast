@@ -1,11 +1,11 @@
 -- immediate-mode barycentric triangle rasterizer
 -- assumes non-zero triangle area
 
+open import "../../../abxh/expand_masked/bitmask"
+
 import "../../../diku-dk/segmented/segmented"
 
 import "../../../abxh/expand_masked/expand_masked"
-import "../../../abxh/expand_masked/bitmask"
-
 import "../fragment"
 import "../varying"
 import "../math/vec"

@@ -1,13 +1,13 @@
 -- tiled triangle rasterizer
 -- assumes non-zero triangle area
 
+open import "../../../abxh/expand_masked/bitmask"
+open import "../utils/flatten2d"
+
 import "../../../diku-dk/segmented/segmented"
 import "../../../diku-dk/sorts/radix_sort"
 
 import "../../../abxh/expand_masked/expand_masked"
-import "../../../abxh/expand_masked/bitmask"
-
-import "../utils/flatten2d"
 
 import "../fragment"
 import "../varying"
