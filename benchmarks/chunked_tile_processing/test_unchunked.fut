@@ -14,7 +14,7 @@ import "../../lib/github.com/abxh/futhrast/math/transform"
 
 import "../../lib/github.com/athas/matte/colour"
 
-import "./triangle_tiled_pineda_custom"
+import "./triangle_tiled_pineda_unchunked"
 
 local
 module Varying : VaryingSpec with t = argb.colour = {
