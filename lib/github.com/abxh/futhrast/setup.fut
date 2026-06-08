@@ -8,12 +8,13 @@ import "clip"
 open import "varying"
 open import "fragment"
 open import "misc"
-open import "rasterize/point"
-open import "rasterize/line"
-open import "rasterize/triangle_imm_pineda"
-open import "rasterize/triangle_tiled_pineda"
-open import "rasterize/triangle_imm_scanline"
-open import "rasterize/triangle_hybrid_pineda"
+
+import "rasterize/point"
+import "rasterize/line"
+import "rasterize/triangle_imm_pineda"
+import "rasterize/triangle_tiled_pineda"
+import "rasterize/triangle_imm_scanline"
+import "rasterize/triangle_hybrid_pineda"
 
 -- | renderer configuration options
 type render_config =
