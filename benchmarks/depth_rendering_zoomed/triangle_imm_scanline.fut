@@ -13,6 +13,7 @@ import "../../lib/github.com/abxh/futhrast/math/vec"
 import "../../lib/github.com/abxh/futhrast/math/transform"
 
 import "../../lib/github.com/athas/matte/colour"
+import "../../lib/github.com/abxh/futhrast/rasterize/triangle_imm_scanline"
 
 local
 module Varying : VaryingSpec with t = argb.colour = {

@@ -1,5 +1,5 @@
-HIP_ENV = C_INCLUDE_PATH=/opt/rocm/include LIBRARY_PATH=/opt/rocm/lib
-CUDA_ENV = C_INCLUDE_PATH=/opt/cuda/include LIBRARY_PATH=/opt/cuda/lib
+HIP_ENV = HIP_PATH=/opt/rocm C_INCLUDE_PATH=/opt/rocm/include LIBRARY_PATH=/opt/rocm/lib
+CUDA_ENV = CUDA_PATH=/opt/cuda/ C_INCLUDE_PATH=/opt/cuda/include LIBRARY_PATH=/opt/cuda/targets/x86_64-linux/lib/ 
 
 all: build run
 
@@ -12,7 +12,14 @@ build:
 	rm -f extract_obj_data
 
 run:
-	$(HIP_ENV) futhark bench --backend=hip test_128x128_16x16.fut
+	$(CUDA_ENV) futhark bench --backend=cuda test_16x16_4x4.fut
+	$(CUDA_ENV) futhark bench --backend=cuda test_32x32_4x4.fut
+	$(CUDA_ENV) futhark bench --backend=cuda test_32x32_8x8.fut
+	$(CUDA_ENV) futhark bench --backend=cuda test_64x64_8x8.fut
+	$(CUDA_ENV) futhark bench --backend=cuda test_64x64_16x16.fut
+	$(CUDA_ENV) futhark bench --backend=cuda test_64x64_4x4.fut
+	$(CUDA_ENV) futhark bench --backend=cuda test_128x128_8x8.fut
+	$(CUDA_ENV) futhark bench --backend=cuda test_128x128_16x16.fut
 
 clean:
 	rm -f extract_obj_data *.in

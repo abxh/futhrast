@@ -14,6 +14,8 @@ import "../../lib/github.com/abxh/futhrast/math/transform"
 
 import "../../lib/github.com/athas/matte/colour"
 
+import "../../lib/github.com/abxh/futhrast/rasterize/triangle_hybrid_pineda"
+
 local
 module Varying : VaryingSpec with t = argb.colour = {
   type t = argb.colour
