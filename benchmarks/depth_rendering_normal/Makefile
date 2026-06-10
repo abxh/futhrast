@@ -1,12 +1,12 @@
 HIP_ENV = HIP_PATH=/opt/rocm C_INCLUDE_PATH=/opt/rocm/include LIBRARY_PATH=/opt/rocm/lib
-CUDA_ENV = C_INCLUDE_PATH=/opt/cuda/include LIBRARY_PATH=/opt/cuda/lib
+CUDA_ENV = CUDA_PATH=/opt/cuda/ C_INCLUDE_PATH=/opt/cuda/include LIBRARY_PATH=/opt/cuda/targets/x86_64-linux/lib/ 
 
 all: build run
 
 build:
 	g++ -std=c++20 \
 		../tiny_obj_loader/tiny_obj_loader.cpp \
-		extract_obj_data.cpp \
+		../extract_obj_data.cpp \
 		-o extract_obj_data
 	./extract_obj_data ../../models/bunny.obj
 	./extract_obj_data ../../models/penger.obj
@@ -16,9 +16,12 @@ build:
 	./extract_obj_data ../../models/armadillo.obj
 	rm -f extract_obj_data
 
+# futhark bench --backend=multicore $(1).fut
+#$(HIP_ENV) futhark bench --backend=hip $(1).fut
+
 define RUN_TEMPLATE
 run_$(1):
-	$(HIP_ENV) futhark bench --backend=hip $(1).fut
+	$(CUDA_ENV) futhark bench --backend=cuda $(1).fut
 	rm -f $(1).c $(1) $(1).fut.tuning
 endef
 

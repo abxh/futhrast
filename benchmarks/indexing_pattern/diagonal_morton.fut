@@ -8,16 +8,13 @@
 
 import "test_template"
 
-def ilog2 (n: i64) : i64 = i64.i32 (63 - i64.clz n)
-
 module O : TiledPinedaTriangleRasterizerOptions = {
   module coarse_mask = bitmask_64
-  module bin_pattern = linear_pattern
-  module coarse_pattern = linear_pattern
+  module bin_pattern = diagonal_pattern
+  module coarse_pattern = morton_u16_pattern
 
   def bin_shift : i64 = 7
   def fine_shift : i64 = 4
-  def num_intrablocks_shift : i64 = ilog2 64
 }
 
 open RTemplate O

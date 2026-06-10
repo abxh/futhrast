@@ -6,8 +6,7 @@ import "../../lib/github.com/abxh/futhrast/math/vec"
 import "../../lib/github.com/abxh/futhrast/math/transform"
 
 import "../../lib/github.com/athas/matte/colour"
-
-open import "../../lib/github.com/abxh/futhrast/rasterize/triangle_tiled_pineda"
+open import "../../lib/github.com/abxh/futhrast/rasterize/triangle_imm_pineda"
 
 local
 module Varying : VaryingSpec with t = argb.colour = {
@@ -50,8 +49,8 @@ local
 def on_fragment (_: state) (f: fragment Varying.t) : argb.colour =
   f.attr
 
-module RTemplate (C: TiledPinedaTriangleRasterizerOptions) = {
-  module Rasterizer = CustomTiledPinedaTriangleRasterizer C
+module RTemplate (C: ImmPinedaTriangleRasterizerOptions) = {
+  module Rasterizer = CustomImmPinedaTriangleRasterizer C
   module R = CustomRenderSetup Rasterizer Varying
   
   def main [n] (vx: [n]f32, vy: [n]f32, vz: [n]f32, inds: []i64) =

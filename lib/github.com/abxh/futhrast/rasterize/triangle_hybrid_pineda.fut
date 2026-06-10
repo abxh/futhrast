@@ -34,7 +34,6 @@ module type HybridPinedaTriangleRasterizerOptions = {
 
   val bin_shift : i64
   val fine_shift : i64
-  val num_intrablocks_shift : i64
   val small_triangle_size_shift : i64
 }
 
@@ -46,7 +45,6 @@ module HybridPinedaTriangleRasterizerDefaultOptions : HybridPinedaTriangleRaster
 
   def bin_shift : i64 = 7
   def fine_shift : i64 = 4
-  def num_intrablocks_shift : i64 = 8
   def small_triangle_size_shift : i64 = 7
 }
 
@@ -73,7 +71,6 @@ module CustomHybridPinedaTriangleRasterizer (O: HybridPinedaTriangleRasterizerOp
     local def bin_size : i64 = 1 << bin_shift
     local def fine_size : i64 = 1 << fine_shift
     local def coarse_size : i64 = 1 << coarse_shift
-    local def num_intrablocks : i64 = 1 << num_intrablocks_shift
     local def small_triangle_size : i64 = 1 << small_triangle_size_shift
 
     local module expand_masked_coarse = expand_masked_generic coarse_mask
@@ -382,25 +379,16 @@ module CustomHybridPinedaTriangleRasterizer (O: HybridPinedaTriangleRasterizerOp
         let x = pixel_x + tile_xmin
         let y = pixel_y + tile_ymin
         in if x < w && y < h
-           then (y, x)
-           else (-1, -1)
+           then y * w + x
+           else -1
       let k = length unique_tile_ids
-      let num_phases = (k + num_intrablocks - 1) >> num_intrablocks_shift
-      in loop dvis_buffer = copy dvis_buffer
-         for phase_index < num_phases do
-           let start = phase_index << num_intrablocks_shift
-           let end = (phase_index + 1) << num_intrablocks_shift `i64.min` k
-           let xs =
-             #[incremental_flattening(only_intra)]
-             iota (end - start)
-             |> map (+ start)
-             |> map f
-             |> flatten
-           let is =
-             iota ((end - start) * (fine_size * fine_size))
-             |> map (+ (start * (fine_size * fine_size)))
-             |> map g
-           in scatter_2d dvis_buffer is xs
+      let dvis_buf =
+        let xs =
+          #[incremental_flattening(only_intra)]
+          tabulate k f |> flatten
+        let is = tabulate (k * (fine_size * fine_size)) g
+        in scatter (copy (flatten dvis_buffer)) is xs
+      in dvis_buf |> unflatten
 
     def rasterize 'target [h] [n] [w]
                   (plot: (fragment V.t -> target))

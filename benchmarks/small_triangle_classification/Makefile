@@ -17,16 +17,14 @@ build:
 	rm -f extract_obj_data
 
 run: 
-	$(CUDA_ENV) futhark bench --backend=cuda test_unchunked.fut
-	$(CUDA_ENV) futhark bench --backend=cuda 64chunk.fut
-	$(CUDA_ENV) futhark bench --backend=cuda 128chunk.fut
-	$(CUDA_ENV) futhark bench --backend=cuda 256chunk.fut
-	$(CUDA_ENV) futhark bench --backend=cuda 512chunk.fut
-	$(CUDA_ENV) futhark bench --backend=cuda 1024chunk.fut
+	$(CUDA_ENV) futhark bench --backend=cuda 32pixels.fut
+	$(CUDA_ENV) futhark bench --backend=cuda 64pixels.fut
+	$(CUDA_ENV) futhark bench --backend=cuda 128pixels.fut
+	$(CUDA_ENV) futhark bench --backend=cuda 256pixels.fut
 
 clean:
 	rm -f extract_obj_data *.in
-	rm -f *.c 64chunk 128chunk 256chunk 512chunk 1024chunk
+	rm -f *.c 32pixels 64pixels 128pixels 256pixels
 	rm -f *.fut.tuning
 	rm -f *.json
 	rm -rf *.prof
