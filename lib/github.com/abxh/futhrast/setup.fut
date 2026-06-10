@@ -131,6 +131,18 @@ module CustomRenderSetup (T: TriangleRasterizerSpec)
          || signed_area_2 > 0 && c.triangle_winding_order == #counterclockwise
          || signed_area_2 < 0 && c.triangle_winding_order == #clockwise
 
+    def zero_bbox_area_test (( f0: fragment V.t
+                       , f1: fragment V.t
+                       , f2: fragment V.t
+                       )
+                      ) : bool =
+      let (p0, p1, p2) = (f0.pos, f1.pos, f2.pos)
+      let xmin = (p0.x `f32.min` p1.x `f32.min` p2.x) |> f32.floor >-> i64.f32
+      let ymin = (p0.y `f32.min` p1.y `f32.min` p2.y) |> f32.floor >-> i64.f32
+      let xmax = (p0.x `f32.max` p1.x `f32.max` p2.x) |> f32.ceil >-> i64.f32
+      let ymax = (p0.y `f32.max` p1.y `f32.max` p2.y) |> f32.ceil >-> i64.f32
+      in (xmax - xmin) * (ymax - ymin) > 0
+
     def render 'uniform 'vertex 'target [w] [h]
                (c: render_config)
                (u: uniform)
@@ -163,7 +175,7 @@ module CustomRenderSetup (T: TriangleRasterizerSpec)
                      (v0, v2, v1))
            |> clip_triangles lerp_vertex_fragment
            |> map (\(v0, v1, v2) -> (f v0, f v1, f v2))
-           |> filter (\tri -> winding_order_test c tri)
+           |> filter (\tri -> winding_order_test c tri && zero_bbox_area_test tri)
            |> Triangle.rasterize (on_frag u) (target_buffer, depth_buffer)
 
     def render_wireframe 'uniform 'vertex 'target [w] [h]
