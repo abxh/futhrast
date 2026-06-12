@@ -14,9 +14,15 @@ type~ lys_state =
   , orientation: rotation.t
   , orientation_delta: rotation.t
   , zmin: f32
-  , verts: [](f32, f32, f32)
-  , inds: []i64
-  , normals: [](f32, f32, f32)
+  , body_verts: [](f32, f32, f32)
+  , body_inds: []i64
+  , body_normals: [](f32, f32, f32)
+  , facial_verts: [](f32, f32, f32)
+  , facial_inds: []i64
+  , facial_normals: [](f32, f32, f32)
+  , quils_verts: [](f32, f32, f32)
+  , quils_inds: []i64
+  , quils_normals: [](f32, f32, f32)
   }
 
 module lys_text_content = {
@@ -30,40 +36,57 @@ module lys_text_content = {
     ++ "w|a|s|d|q|e|<arrow keys>: movement\n"
 
   def text_content (render_duration: f32) (s: lys_state) : text_content =
-    let num_triangles = length s.inds / 3
+    let num_triangles =
+      length s.body_inds / 3
+      + length s.facial_inds / 3
+      + length s.quils_inds / 3
     in (i64.f32 render_duration, num_triangles)
 
-  def text_colour = const argb.white
+  def text_colour = const argb.black
 }
 
 module lys_file = {
   def input_file_names () =
     ""
-    ++ "../../models/teapot.obj,"
+    ++ "../../models/hedgehog/body.obj,"
+    ++ "../../models/hedgehog/eyes_and_nose.obj,"
+    ++ "../../models/hedgehog/quils.obj,"
 
   def load_bin _ _ s = s
 
   def load_obj_vertex_indices [n] (i: i64) (is: [n]i64) (s: lys_state) : lys_state =
     match i
     case 0 ->
-      s with inds = is
+      s with body_inds = is
+    case 1 ->
+      s with facial_inds = is
+    case 2 ->
+      s with quils_inds = is
     case _ ->
       s
 
   def load_obj_vertices [n] (i: i64) (vs: [n](f32, f32, f32)) (s: lys_state) : lys_state =
     match i
     case 0 ->
-      s with verts = vs
+      s with body_verts = vs
         with verts_avg_pos.0 = f32.sum (map (.0) vs) / f32.i64 (length vs)
         with verts_avg_pos.1 = reduce f32.min f32.highest (map (.1) vs)
         with verts_avg_pos.2 = f32.sum (map (.2) vs) / f32.i64 (length vs)
+    case 1 ->
+      s with facial_verts = vs
+    case 2 ->
+      s with quils_verts = vs
     case _ ->
       s
 
   def load_obj_normals [n] (i: i64) (vs: [n](f32, f32, f32)) (s: lys_state) : lys_state =
     match i
     case 0 ->
-      s with normals = vs
+      s with body_normals = vs
+    case 1 ->
+      s with facial_normals = vs
+    case 2 ->
+      s with quils_normals = vs
     case _ ->
       s
 
@@ -85,11 +108,17 @@ module lys : lys with text_content = lys_text_content.text_content = {
     , pos = (0, 2, -5)
     , pos_delta = (0, 0, 0)
     , verts_avg_pos = (0, 0, 0)
-    , orientation = rotation.identity |> (rotation.*) (rotation.rotate_x (-15 / 180 * 3.14))
+    , orientation = rotation.identity
     , orientation_delta = rotation.identity
-    , inds = replicate 0 (-1)
-    , verts = replicate 0 (0, 0, 0)
-    , normals = replicate 0 (0, 0, 0)
+    , body_verts = replicate 0 (0, 0, 0)
+    , body_inds = replicate 0 (-1)
+    , body_normals = replicate 0 (0, 0, 0)
+    , facial_verts = replicate 0 (0, 0, 0)
+    , facial_inds = replicate 0 (-1)
+    , facial_normals = replicate 0 (0, 0, 0)
+    , quils_verts = replicate 0 (0, 0, 0)
+    , quils_inds = replicate 0 (-1)
+    , quils_normals = replicate 0 (0, 0, 0)
     }
 
   def resize (h: i64) (w: i64) (s: state) =
@@ -151,7 +180,7 @@ module lys : lys with text_content = lys_text_content.text_content = {
   local module RV = RenderSetup vec3f_tup
 
   local
-  def on_checkerboard_vertex (s: state) (v: (f32, f32, f32)) : vertex_out vec3f.t =
+  def on_grass_vertex (s: state) (v: (f32, f32, f32)) : vertex_out vec3f.t =
     let aspect_ratio = f32.i64 s.w / f32.i64 s.h
     let model =
       transform.identity
@@ -204,21 +233,23 @@ module lys : lys with text_content = lys_text_content.text_content = {
        , attr = (pos, normal)
        }
 
-  def ambient_color = argb.from_rgba (150 / 255) (30 / 255) (120 / 255) 1
-  def diffuse_color = argb.from_rgba (250 / 255) (180 / 255) (255 / 255) 1
-  def specular_color = argb.from_rgba (255 / 255) (200 / 255) (255 / 255) 1
-  def light_dir = vec3f.from_tuple (0, 1, 0)
+  def light_dir = vec3f.from_tuple (0, 1, -1) |> vec3f.normalize
+
+  def ambient_color = argb.from_rgba (235 / 255) (210 / 255) (140 / 255) 1
+  def diffuse_color = argb.from_rgba (255 / 255) (235 / 255) (160 / 255) 1
+  def specular_color = argb.from_rgba (255 / 255) (250 / 255) (210 / 255) 1
 
   local
-  def on_model_fragment (_: state) (f: fragment vec3f_tup.t) : argb.colour =
-    let ka = 0.5
-    let kb = 0.3
-    let kc = 0.2
+  def on_body_fragment (_: state) (f: fragment vec3f_tup.t) : argb.colour =
+    let ka = 0.45
+    let kb = 0.45
+    let kc = 0.35
     let (vertex_pos, vertex_normal) = f.attr
     let vertex_normal = vertex_normal |> vec3f.normalize
-    let diffuse_factor = f32.max 0 (vertex_normal `vec3f.dot` light_dir)
+    let diffuse_raw = f32.max 0 (vertex_normal `vec3f.dot` light_dir)
+    let diffuse_factor = 0.35 + 0.65 * diffuse_raw
     let specular_factor =
-      let shininess = 16
+      let shininess = 48
       let view_dir = (vec3f.neg vertex_pos) |> vec3f.normalize
       let halfway = (light_dir vec3f.+ view_dir) |> vec3f.normalize
       in (f32.max 0 (vertex_normal `vec3f.dot` halfway)) ** shininess
@@ -227,38 +258,96 @@ module lys : lys with text_content = lys_text_content.text_content = {
        `argb.add_linear` argb.scale diffuse_color (kb * diffuse_factor)
        `argb.add_linear` argb.scale specular_color (kc * specular_factor)
 
+  def eye_nose_color = argb.from_rgba (20 / 255) (20 / 255) (20 / 255) 1
+  def eye_specular = argb.from_rgba (255 / 255) (255 / 255) (255 / 255) 1
+
   local
-  def on_checkerboard_fragment (s: state) (f: fragment vec3f.t) : argb.colour =
+  def on_eye_nose_fragment (_: state) (f: fragment vec3f_tup.t) : argb.colour =
+    let kb = 0.25
+    let kc = 0.8
+    let (vertex_pos, vertex_normal) = f.attr
+    let vertex_normal = vertex_normal |> vec3f.normalize
+    let diffuse_raw = f32.max 0 (vertex_normal `vec3f.dot` light_dir)
+    let diffuse_factor = 0.4 + 0.6 * diffuse_raw
+    let specular_factor =
+      let shininess = 80
+      let view_dir = (vec3f.neg vertex_pos) |> vec3f.normalize
+      let halfway = (light_dir vec3f.+ view_dir) |> vec3f.normalize
+      in (f32.max 0 (vertex_normal `vec3f.dot` halfway)) ** shininess
+    in argb.from_rgba 0 0 0 0
+       `argb.add_linear` argb.scale eye_nose_color (kb * diffuse_factor)
+       `argb.add_linear` argb.scale eye_specular (kc * specular_factor)
+
+  def grass_center = argb.from_rgba (70 / 255) (120 / 255) (55 / 255) 1
+  def grass_mid = argb.from_rgba (110 / 255) (160 / 255) (80 / 255) 1
+  def grass_outer = argb.from_rgba (20 / 255) (60 / 255) (25 / 255) 1
+
+  local
+  def on_grass_fragment (s: state) (f: fragment vec3f.t) : argb.colour =
     let p = f.attr
-    let scale = 1
-    let xi = i32.f32 (f32.floor (p.x * scale))
-    let zi = i32.f32 (f32.floor (p.z * scale))
-    let checker = ((xi + zi) % 2) == 0
-    let checker_albedo = if checker then 1.0 else 0.4
-    -- radial falloff around model:
     let dx = p.x - s.verts_avg_pos.0
     let dz = p.z - s.verts_avg_pos.2
     let dist = f32.sqrt (dx * dx + dz * dz)
-    let radius = 4.0
-    let attenuation = f32.max 0 (1 - dist / radius)
-    let light_strength = attenuation * attenuation
-    in argb.scale diffuse_color (checker_albedo * light_strength)
+    let radius = 2.0
+    let edge = 0.25
+    let mask = f32.min (f32.max ((radius - dist) / edge) 0.0) 1.0
+    let t = f32.max 0 (1 - dist / radius)
+    let t2 = t * t * (3 - 2 * t)
+    let noise = 0.08 * (0.5 + 0.5 * f32.sin (p.x * 8.0 + p.z * 11.0))
+    let g = f32.min 1 (t2 * (0.75 + noise))
+    let t = (f32.min 1 (g / 0.6)) ** 1.6
+    let col =
+      argb.from_rgba 0 0 0 0
+      `argb.add_linear` argb.scale grass_outer (1 - t)
+      `argb.add_linear` argb.scale grass_mid (1 - t)
+      `argb.add_linear` argb.scale grass_center t
+    in if mask <= 0.0
+       then argb.from_rgba 1 1 1 1
+       else col
+
+  def quils = argb.from_rgba (10 / 255) (25 / 255) (60 / 255) 1
 
   def render (s: state) : [][]argb.colour =
     let render_config: render_config =
       { triangle_winding_order = #neither
       }
-    let n = length s.inds
-    let verts' = zip (sized n (map (\i -> s.verts[i]) s.inds)) (sized n s.normals)
-    in (tabulate_2d s.h s.w (const (const (argb.black))), tabulate_2d s.h s.w (const (const 0)))
+    let num_body_verts = length s.body_inds
+    let body_verts' =
+      zip (sized num_body_verts (map (\i -> s.body_verts[i]) s.body_inds))
+          (sized num_body_verts s.body_normals)
+    let num_facial_verts = length s.facial_inds
+    let facial_verts' =
+      zip (sized num_facial_verts (map (\i -> s.facial_verts[i]) s.facial_inds))
+          (sized num_facial_verts s.facial_normals)
+    let num_quils_verts = length s.quils_inds
+    let quils_verts' =
+      zip (sized num_quils_verts (map (\i -> s.quils_verts[i]) s.quils_inds))
+          (sized num_quils_verts s.quils_normals)
+    in (tabulate_2d s.h s.w (const (const (argb.white))), tabulate_2d s.h s.w (const (const 0)))
        |> RV.render render_config
                     s
                     { primitive_type = #triangles
-                    , vertices = verts'
-                    , indices = iota n
+                    , vertices = body_verts'
+                    , indices = iota num_body_verts
                     }
                     on_vertex
-                    on_model_fragment
+                    on_body_fragment
+       |> RV.render render_config
+                    s
+                    { primitive_type = #triangles
+                    , vertices = facial_verts'
+                    , indices = iota num_facial_verts
+                    }
+                    on_vertex
+                    on_eye_nose_fragment
+       |> RV.render render_config
+                    s
+                    { primitive_type = #triangles
+                    , vertices = quils_verts'
+                    , indices = iota num_quils_verts
+                    }
+                    on_vertex
+                    (\_ _ -> quils)
        |> RC.render render_config
                     s
                     { primitive_type = #triangles
@@ -270,7 +359,7 @@ module lys : lys with text_content = lys_text_content.text_content = {
                         ]
                     , indices = [0, 1, 2, 0, 2, 3]
                     }
-                    on_checkerboard_vertex
-                    on_checkerboard_fragment
+                    on_grass_vertex
+                    on_grass_fragment
        |> (.0)
-}
+  }
