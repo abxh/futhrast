@@ -33,9 +33,9 @@ module type TiledPinedaTriangleRasterizerOptions = {
 }
 
 module TiledPinedaTriangleRasterizerDefaultOptions : TiledPinedaTriangleRasterizerOptions = {
-  module coarse_mask = bitmask_64
+  module coarse_mask = bitmask_16
 
-  def bin_shift : i64 = 6
+  def bin_shift : i64 = 5
   def fine_shift : i64 = 3
 }
 

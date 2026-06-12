@@ -35,10 +35,10 @@ module type HybridPinedaTriangleRasterizerOptions = {
 }
 
 module HybridPinedaTriangleRasterizerDefaultOptions : HybridPinedaTriangleRasterizerOptions = {
-  module coarse_mask = bitmask_64
+  module coarse_mask = bitmask_16
   module small_triangle_mask = bitmask_128
 
-  def bin_shift : i64 = 6
+  def bin_shift : i64 = 5
   def fine_shift : i64 = 3
   def small_triangle_size_shift : i64 = 7
 }
