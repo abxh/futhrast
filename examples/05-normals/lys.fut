@@ -127,10 +127,13 @@ module lys : lys with text_content = lys_text_content.text_content = {
     match e
     case #step td ->
       let local_velocity = vec3f.from_tuple s.pos_delta
-      let world_velocity = rotation.apply s.orientation local_velocity
-      let orientation = s.orientation_delta rotation.* s.orientation |> rotation.normalize
+      let orientation =
+        s.orientation rotation.* s.orientation_delta
+        |> rotation.normalize
+      let world_velocity = rotation.apply orientation local_velocity
       in s with orientation = orientation
-           with pos = vec3f.to_tuple <| (vec3f.from_tuple s.pos) vec3f.+ (td vec3f.* world_velocity)
+           with pos = vec3f.to_tuple
+           <| (vec3f.from_tuple s.pos) vec3f.+ (td vec3f.* world_velocity)
     case #keydown {key} -> keydown key s
     case #keyup {key} -> keyup key s
     case _ -> s
