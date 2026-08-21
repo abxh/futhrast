@@ -13,7 +13,7 @@ make -j $(nproc)
 ./lys
 ```
 
-You will have to get the latest version of futhark to run the code.
+You will have to get a version of futhark compatible with version `0.26.3` to run the code.
 
 You will also need to install the SDL-dependencies `libsdl2-dev` and `libsdl2-ttf-dev` libraries to build the `lys` futhark library.
 
