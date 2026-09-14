@@ -1,4 +1,4 @@
-import "../../../diku-dk/segmented/segmented"
+import "../../../abxh/segmented/segmented"
 
 import "../fragment"
 import "../varying"

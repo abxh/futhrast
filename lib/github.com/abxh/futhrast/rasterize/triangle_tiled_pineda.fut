@@ -1,12 +1,8 @@
 -- tiled triangle rasterizer
 -- assumes non-zero triangle area
 
-open import "../../../abxh/expand_masked/bitmask"
-
-import "../../../diku-dk/segmented/segmented"
+import "../../../abxh/segmented/segmented"
 import "../../../diku-dk/sorts/radix_sort"
-
-import "../../../abxh/expand_masked/expand_masked"
 
 import "../fragment"
 import "../varying"
@@ -26,15 +22,11 @@ module type TriangleRasterizerSpec =
   }
 
 module type TiledPinedaTriangleRasterizerOptions = {
-  module coarse_mask: bitmask
-
   val bin_shift : i64
   val fine_shift : i64
 }
 
 module TiledPinedaTriangleRasterizerDefaultOptions : TiledPinedaTriangleRasterizerOptions = {
-  module coarse_mask = bitmask_16
-
   def bin_shift : i64 = 5
   def fine_shift : i64 = 3
 }
@@ -62,9 +54,6 @@ module CustomTiledPinedaTriangleRasterizer (O: TiledPinedaTriangleRasterizerOpti
     local def bin_size : i64 = 1 << bin_shift
     local def fine_size : i64 = 1 << fine_shift
     local def coarse_size : i64 = 1 << coarse_shift
-
-    local module expand_masked_coarse = expand_masked_generic coarse_mask
-    local def expand_masked_coarse = expand_masked_coarse.expand_masked
 
     def highest_tri_count : i64 = (1 << 33) - 1
     def encode_depth d = f32.to_bits d
@@ -201,7 +190,7 @@ module CustomTiledPinedaTriangleRasterizer (O: TiledPinedaTriangleRasterizerOpti
           in {xmin, ymin, xmax, ymax}
         in tri_overlaps_bbox tile_bbox wzero wdelta
       in zip bin_idxs tri_idxs
-         |> expand_masked_coarse (\(_, _) -> coarse_mask.num_bits) get pred
+         |> expand_filter (\(_, _) -> coarse_size * coarse_size) get pred
          |> unzip
 
     def bin_rasterize [n]
@@ -378,7 +367,6 @@ module CustomTiledPinedaTriangleRasterizer (O: TiledPinedaTriangleRasterizerOpti
       let bins_w = (w + bin_size - 1) >> bin_shift
       let bins_h = (h + bin_size - 1) >> bin_shift
       let (bins_h, bins_w) = assert (bins_h * bins_w - 1 <= i64.u16 u16.highest) (bins_h, bins_w)
-      let coarse_size = assert (coarse_size * coarse_size == coarse_mask.num_bits) coarse_size
       let coarse_size = assert (coarse_size * coarse_size - 1 <= i64.u8 u8.highest) coarse_size
       let total_tiles = bins_w * bins_h * (coarse_size * coarse_size)
       let num_bits_to_sort = ilog2_ceil total_tiles

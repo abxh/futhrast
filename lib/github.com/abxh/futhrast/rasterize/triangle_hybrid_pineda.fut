@@ -1,12 +1,9 @@
 -- tiled-hybrid triangle rasterizer
 -- assumes non-zero triangle area
 
-open import "../../../abxh/expand_masked/bitmask"
-
-import "../../../diku-dk/segmented/segmented"
+import "../../../abxh/segmented/segmented"
 import "../../../diku-dk/sorts/radix_sort"
 
-import "../../../abxh/expand_masked/expand_masked"
 import "../fragment"
 import "../varying"
 
@@ -26,18 +23,12 @@ module type TriangleRasterizerSpec =
   }
 
 module type HybridPinedaTriangleRasterizerOptions = {
-  module coarse_mask: bitmask
-  module small_triangle_mask: bitmask
-
   val bin_shift : i64
   val fine_shift : i64
   val small_triangle_size_shift : i64
 }
 
 module HybridPinedaTriangleRasterizerDefaultOptions : HybridPinedaTriangleRasterizerOptions = {
-  module coarse_mask = bitmask_16
-  module small_triangle_mask = bitmask_128
-
   def bin_shift : i64 = 5
   def fine_shift : i64 = 3
   def small_triangle_size_shift : i64 = 7
@@ -67,12 +58,6 @@ module CustomHybridPinedaTriangleRasterizer (O: HybridPinedaTriangleRasterizerOp
     local def fine_size : i64 = 1 << fine_shift
     local def coarse_size : i64 = 1 << coarse_shift
     local def small_triangle_size : i64 = 1 << small_triangle_size_shift
-
-    local module expand_masked_coarse = expand_masked_generic coarse_mask
-    local module expand_masked_small_triangles = expand_masked_generic small_triangle_mask
-
-    local def expand_masked_coarse = expand_masked_coarse.expand_masked
-    local def expand_masked_small_triangles = expand_masked_small_triangles.expand_masked
 
     def highest_tri_count : i64 = (1 << 33) - 1
     def encode_depth d = f32.to_bits d
@@ -209,15 +194,12 @@ module CustomHybridPinedaTriangleRasterizer (O: HybridPinedaTriangleRasterizerOp
           in {xmin, ymin, xmax, ymax}
         in tri_overlaps_bbox tile_bbox wzero wdelta
       in zip bin_idxs tri_idxs
-         |> expand_masked_coarse (\(_, _) -> coarse_mask.num_bits) get pred
+         |> expand_filter (\(_, _) -> coarse_size * coarse_size) get pred
 
     def bin_rasterize [n]
                       {h = _: i64, w = w: i64}
                       (tris: [n]triangle) =
       let bins_w = (w + bin_size - 1) >> bin_shift
-      let small_triangle_size =
-        assert (small_triangle_size == small_triangle_mask.num_bits)
-        small_triangle_size
       let f tri_index = (tri_index, calc_tri_bbox tris[tri_index])
       let g (tri_index, tri_bbox) =
         let bin_bbox =
@@ -289,7 +271,7 @@ module CustomHybridPinedaTriangleRasterizer (O: HybridPinedaTriangleRasterizerOp
            && w.z fixedpoint.>= (fixedpoint.i64 0)
       let (is, xs) =
         zip tri_idxs tri_bboxs
-        |> expand_masked_small_triangles (\(_, _) -> small_triangle_mask.num_bits) get pred
+        |> expand_filter (\(_, _) -> small_triangle_size) get pred
         |> unzip
       in reduce_by_index_2d dvis_buffer u64.max ne_dvis is xs
 
@@ -402,7 +384,6 @@ module CustomHybridPinedaTriangleRasterizer (O: HybridPinedaTriangleRasterizerOp
       let bins_w = (w + bin_size - 1) >> bin_shift
       let bins_h = (h + bin_size - 1) >> bin_shift
       let (bins_h, bins_w) = assert (bins_h * bins_w - 1 <= i64.u16 u16.highest) (bins_h, bins_w)
-      let coarse_size = assert (coarse_size * coarse_size == coarse_mask.num_bits) coarse_size
       let coarse_size = assert (coarse_size * coarse_size - 1 <= i64.u8 u8.highest) coarse_size
       let total_tiles = bins_w * bins_h * (coarse_size * coarse_size)
       let num_bits_to_sort = ilog2_ceil total_tiles

@@ -2,8 +2,7 @@ package github.com/abxh/futhrast
 
 require {
   github.com/athas/matte 0.1.3 #ec4243a5f64cb818a4289dbc4953460ea19da12c
-  github.com/diku-dk/segmented 0.5.3 #c96450f95a1e43e0906366a1dab45cb18220a643
   github.com/diku-dk/sorts 0.7.2 #4dbe5a2e489fa11b397e2eaf167059376f0d628a
   github.com/diku-dk/linalg 0.6.5 #d7e197834b26050add8c8b3d747cf61fa2762bbb
-  github.com/abxh/expand_masked 0.0.0-20260910001946+432d4db2439bd8416148b6d8d1cf2a0585ae9cb4
+  github.com/abxh/segmented 0.0.0-20260914173606+f8547116634ddefa84b28ebf62972fdb0c2d686a
 }

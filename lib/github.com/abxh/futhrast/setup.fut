@@ -1,6 +1,6 @@
 -- | setup vertices to pass to rasterizer
 
-import "../../diku-dk/segmented/segmented"
+import "../../abxh/segmented/segmented"
 
 import "math/vec"
 import "clip"

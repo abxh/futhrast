@@ -1,11 +1,8 @@
 -- immediate-mode barycentric triangle rasterizer
 -- assumes non-zero triangle area
 
-open import "../../../abxh/expand_masked/bitmask"
+import "../../../abxh/segmented/segmented"
 
-import "../../../diku-dk/segmented/segmented"
-
-import "../../../abxh/expand_masked/expand_masked"
 import "../fragment"
 import "../varying"
 import "../math/vec"
@@ -23,10 +20,6 @@ module type TriangleRasterizerSpec =
   }
 
 module type ImmPinedaTriangleRasterizerOptions = {
-  module coarse_mask: bitmask
-  module fine_mask: bitmask
-  module small_triangle_mask: bitmask
-
   val bin_shift : i64
   val fine_shift : i64
   val small_triangle_size_shift : i64
@@ -34,10 +27,6 @@ module type ImmPinedaTriangleRasterizerOptions = {
 
 -- | default options
 module ImmPinedaTriangleRasterizerDefaultOptions : ImmPinedaTriangleRasterizerOptions = {
-  module coarse_mask = bitmask_16
-  module fine_mask = bitmask_64
-  module small_triangle_mask = bitmask_128
-
   def bin_shift : i64 = 5
   def fine_shift : i64 = 3
   def small_triangle_size_shift : i64 = 7
@@ -67,14 +56,6 @@ module CustomImmPinedaTriangleRasterizer (O: ImmPinedaTriangleRasterizerOptions)
     local def fine_size : i64 = 1 << fine_shift
     local def coarse_size : i64 = 1 << coarse_shift
     local def small_triangle_size : i64 = 1 << small_triangle_size_shift
-
-    local module expand_masked_fine = expand_masked_generic fine_mask
-    local module expand_masked_coarse = expand_masked_generic coarse_mask
-    local module expand_masked_small_triangles = expand_masked_generic small_triangle_mask
-
-    local def expand_masked_fine = expand_masked_fine.expand_masked
-    local def expand_masked_coarse = expand_masked_coarse.expand_masked
-    local def expand_masked_small_triangles = expand_masked_small_triangles.expand_masked
 
     def highest_tri_count : i64 = (1 << 33) - 1
     def encode_depth d = f32.to_bits d
@@ -183,7 +164,6 @@ module CustomImmPinedaTriangleRasterizer (O: ImmPinedaTriangleRasterizerOptions)
                        {h = _: i64, w = w: i64}
                        tri_infos
                        ((tile_ids, tri_idxs): ([n]u32, [n]i64)) =
-      let fine_size = assert (fine_size * fine_size == fine_mask.num_bits) fine_size
       let bins_w = ((w + bin_size - 1) >> bin_shift)
       let f (tile_id, tri_index) =
         let bin_index = i64.u32 (tile_id >> u32.i64 (2 * coarse_shift))
@@ -226,14 +206,13 @@ module CustomImmPinedaTriangleRasterizer (O: ImmPinedaTriangleRasterizerOptions)
            && w.z fixedpoint.>= (fixedpoint.i64 0)
       in zip tile_ids tri_idxs
          |> map f
-         |> expand_masked_fine (\(_, _) -> fine_mask.num_bits) get pred
+         |> expand_filter (\(_, _) -> fine_size * fine_size) get pred
          |> unzip
 
     def coarse_rasterize [n]
                          {h = _: i64, w = w: i64}
                          (tris: []triangle)
                          ((bin_idxs, tri_idxs): ([n]u16, [n]i64)) =
-      let coarse_size = assert (coarse_size * coarse_size == coarse_mask.num_bits) coarse_size
       let coarse_size = assert (coarse_size * coarse_size - 1 <= i64.u8 u8.highest) coarse_size
       let bins_w = ((w + bin_size - 1) >> bin_shift)
       let get (bin_index, tri_index) (tile_index: i64) =
@@ -254,7 +233,7 @@ module CustomImmPinedaTriangleRasterizer (O: ImmPinedaTriangleRasterizerOptions)
           in {xmin, ymin, xmax, ymax}
         in tri_overlaps_bbox tile_bbox wzero wdelta
       in zip bin_idxs tri_idxs
-         |> expand_masked_coarse (\(_, _) -> coarse_mask.num_bits) get pred
+         |> expand_filter (\(_, _) -> coarse_size * coarse_size) get pred
          |> unzip
 
     def bin_rasterize [n]
@@ -263,9 +242,6 @@ module CustomImmPinedaTriangleRasterizer (O: ImmPinedaTriangleRasterizerOptions)
       let bins_h = (h + bin_size - 1) >> bin_shift
       let bins_w = (w + bin_size - 1) >> bin_shift
       let bins_w = assert (bins_h * bins_w - 1 <= i64.u16 u16.highest) bins_w
-      let small_triangle_size =
-        assert (small_triangle_size == small_triangle_mask.num_bits)
-        small_triangle_size
       let f tri_index = (tri_index, calc_tri_bbox tris[tri_index])
       let g (tri_index, tri_bbox) =
         let bin_bbox =
@@ -340,7 +316,7 @@ module CustomImmPinedaTriangleRasterizer (O: ImmPinedaTriangleRasterizerOptions)
            && w.y fixedpoint.>= (fixedpoint.i64 0)
            && w.z fixedpoint.>= (fixedpoint.i64 0)
       in zip tri_idxs tri_bboxs
-         |> expand_masked_small_triangles max_sz get pred
+         |> expand_filter max_sz get pred
          |> unzip
 
     def rasterize 'target [h] [w] [n]
