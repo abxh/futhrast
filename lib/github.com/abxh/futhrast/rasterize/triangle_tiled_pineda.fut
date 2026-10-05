@@ -29,8 +29,8 @@ module type TiledPinedaTriangleRasterizerOptions = {
 }
 
 module TiledPinedaTriangleRasterizerDefaultOptions : TiledPinedaTriangleRasterizerOptions = {
-  def bin_shift : i64 = 7
-  def fine_shift : i64 = 4
+  def bin_shift : i64 = 5
+  def fine_shift : i64 = 3
 }
 
 -- | tiled triangle rasterizer
@@ -192,7 +192,7 @@ module CustomTiledPinedaTriangleRasterizer (O: TiledPinedaTriangleRasterizerOpti
           in {xmin, ymin, xmax, ymax}
         in tri_overlaps_bbox tile_bbox wzero wdelta
       in zip bin_idxs tri_idxs
-         |> expand_filter (\(_, _) -> coarse_size * coarse_size) get pred
+         |> expand_masked (\(_, _) -> coarse_size * coarse_size) get pred
          |> unzip
 
     def bin_rasterize [n]

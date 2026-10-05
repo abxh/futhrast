@@ -207,7 +207,7 @@ module CustomImmPinedaTriangleRasterizer (O: ImmPinedaTriangleRasterizerOptions)
            && w.z fixedpoint.>= (fixedpoint.i64 0)
       in zip tile_ids tri_idxs
          |> map f
-         |> expand_filter (\(_, _) -> fine_size * fine_size) get pred
+         |> expand_masked (\(_, _) -> fine_size * fine_size) get pred
          |> unzip
 
     def coarse_rasterize [n]
@@ -234,7 +234,7 @@ module CustomImmPinedaTriangleRasterizer (O: ImmPinedaTriangleRasterizerOptions)
           in {xmin, ymin, xmax, ymax}
         in tri_overlaps_bbox tile_bbox wzero wdelta
       in zip bin_idxs tri_idxs
-         |> expand_filter (\(_, _) -> coarse_size * coarse_size) get pred
+         |> expand_masked (\(_, _) -> coarse_size * coarse_size) get pred
          |> unzip
 
     def bin_rasterize [n]
@@ -317,7 +317,7 @@ module CustomImmPinedaTriangleRasterizer (O: ImmPinedaTriangleRasterizerOptions)
            && w.y fixedpoint.>= (fixedpoint.i64 0)
            && w.z fixedpoint.>= (fixedpoint.i64 0)
       in zip tri_idxs tri_bboxs
-         |> expand_filter max_sz get pred
+         |> expand_masked max_sz get pred
          |> unzip
 
     def rasterize 'target [h] [w] [n]

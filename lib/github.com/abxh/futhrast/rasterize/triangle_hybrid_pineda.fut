@@ -196,7 +196,7 @@ module CustomHybridPinedaTriangleRasterizer (O: HybridPinedaTriangleRasterizerOp
           in {xmin, ymin, xmax, ymax}
         in tri_overlaps_bbox tile_bbox wzero wdelta
       in zip bin_idxs tri_idxs
-         |> expand_filter (\(_, _) -> coarse_size * coarse_size) get pred
+         |> expand_masked (\(_, _) -> coarse_size * coarse_size) get pred
 
     def bin_rasterize [n]
                       {h = _: i64, w = w: i64}
@@ -273,7 +273,7 @@ module CustomHybridPinedaTriangleRasterizer (O: HybridPinedaTriangleRasterizerOp
            && w.z fixedpoint.>= (fixedpoint.i64 0)
       let (is, xs) =
         zip tri_idxs tri_bboxs
-        |> expand_filter (\(_, _) -> small_triangle_size) get pred
+        |> expand_masked (\(_, _) -> small_triangle_size) get pred
         |> unzip
       in reduce_by_index_2d dvis_buffer u64.max ne_dvis is xs
 

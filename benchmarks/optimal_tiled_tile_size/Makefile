@@ -12,6 +12,16 @@ build:
 	rm -f extract_obj_data
 
 run:
+	$(CUDA_ENV) futhark bench --backend=cuda test_16x16_4x4.fut --profile --json=16x16_4x4.json
+	futhark profile 16x16_4x4.json
+	$(CUDA_ENV) futhark bench --backend=cuda test_32x32_4x4.fut --profile --json=32x32_4x4.json
+	futhark profile 32x32_4x4.json
+	$(CUDA_ENV) futhark bench --backend=cuda test_32x32_8x8.fut --profile --json=32x32_8x8.json
+	futhark profile 32x32_8x8.json
+	$(CUDA_ENV) futhark bench --backend=cuda test_64x64_8x8.fut --profile --json=64x64_8x8.json
+	futhark profile 64x64_8x8.json
+	$(CUDA_ENV) futhark bench --backend=cuda test_64x64_16x16.fut --profile --json=64x64_16x16.json
+	futhark profile 64x64_16x16.json
 	$(CUDA_ENV) futhark bench --backend=cuda test_64x64_4x4.fut --profile --json=64x64_4x4.json
 	futhark profile 64x64_4x4.json
 	$(CUDA_ENV) futhark bench --backend=cuda test_128x128_8x8.fut --profile --json=128x128_8x8.json
