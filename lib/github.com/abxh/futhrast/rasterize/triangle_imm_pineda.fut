@@ -1,7 +1,8 @@
 -- immediate-mode barycentric triangle rasterizer
 -- assumes non-zero triangle area
 
-import "../../../abxh/segmented/segmented"
+import "../../../abxh/expand_masked/expand_masked"
+import "../../../diku-dk/segmented/segmented"
 
 import "../fragment"
 import "../varying"

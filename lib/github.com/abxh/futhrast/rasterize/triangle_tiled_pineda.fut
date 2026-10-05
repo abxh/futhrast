@@ -1,7 +1,9 @@
 -- tiled triangle rasterizer
 -- assumes non-zero triangle area
 
-import "../../../abxh/segmented/segmented"
+import "../../../abxh/expand_masked/expand_masked"
+import "../../../diku-dk/segmented/segmented"
+
 import "../../../diku-dk/sorts/radix_sort"
 
 import "../fragment"
@@ -27,8 +29,8 @@ module type TiledPinedaTriangleRasterizerOptions = {
 }
 
 module TiledPinedaTriangleRasterizerDefaultOptions : TiledPinedaTriangleRasterizerOptions = {
-  def bin_shift : i64 = 5
-  def fine_shift : i64 = 3
+  def bin_shift : i64 = 7
+  def fine_shift : i64 = 4
 }
 
 -- | tiled triangle rasterizer

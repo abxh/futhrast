@@ -1,6 +1,7 @@
 -- modified `triangle_imm_pineda.fut` to not include small triangle optimisation.
 
-import "../../lib/github.com/abxh/segmented/segmented"
+import "../../lib/github.com/abxh/expand_masked/expand_masked"
+import "../../lib/github.com/diku-dk/segmented/segmented"
 
 import "../../lib/github.com/abxh/futhrast/fragment"
 import "../../lib/github.com/abxh/futhrast/varying"
